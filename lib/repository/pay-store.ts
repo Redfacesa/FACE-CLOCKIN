@@ -190,14 +190,23 @@ export class PayStore {
   async recordConsent(actor: Actor, employeeId: string) {
     const employee = await this.mustEmployee(employeeId);
     this.assertMerchant(actor, employee.merchant_id);
-    const existing = await this.supabase
+    const selected = await this.supabase
       .from("workforce_biometric_profiles")
-      .select("status, descriptor")
+      .select("status, descriptor, embedding_ciphertext")
       .eq("employee_id", employeeId)
       .eq("modality", "face")
       .maybeSingle();
+    const existing = selected.error?.message?.includes("embedding_ciphertext")
+      ? await this.supabase
+          .from("workforce_biometric_profiles")
+          .select("status, descriptor")
+          .eq("employee_id", employeeId)
+          .eq("modality", "face")
+          .maybeSingle()
+      : selected;
     fail(existing.error);
-    const keepActive = Boolean(existing.data?.descriptor) && existing.data?.status === "active";
+    const row = existing.data as { status?: string; descriptor?: unknown; embedding_ciphertext?: string | null } | null;
+    const keepActive = Boolean(row?.embedding_ciphertext || row?.descriptor) && row?.status === "active";
     const { error } = await this.supabase.from("workforce_biometric_profiles").upsert(
       {
         merchant_id: this.merchantId,
@@ -464,23 +473,20 @@ export class PayStore {
   async createDevice(actor: Actor, input: { locationId: string; name: string; deviceCode: string; matchThreshold: number }) {
     if (actor.role !== "admin") throw new DomainError("Only an administrator can register a device.", 403);
     const secret = newDeviceSecret();
-    const { data, error } = await this.supabase
-      .from("workforce_devices")
-      .insert({
-        merchant_id: this.merchantId,
-        device_code: input.deviceCode.trim().toUpperCase(),
-        name: input.name.trim(),
-        match_threshold: input.matchThreshold,
-        secret_hash: hashDeviceSecret(secret),
-        status: "active",
-      })
-      .select("id, device_code")
-      .single();
-    if (error?.message.match(/workforce_devices|schema cache/i)) {
+    const { data, error } = await this.supabase.rpc("workforce_register_device", {
+      p_merchant_id: this.merchantId,
+      p_device_code: input.deviceCode.trim().toUpperCase(),
+      p_name: input.name.trim(),
+      p_match_threshold: input.matchThreshold,
+      p_secret_hash: hashDeviceSecret(secret),
+    });
+    if (error?.message.match(/workforce_register_device|workforce_devices|schema cache/i)) {
       throw new DomainError("Run Redface Pay migration 0477_workforce_clock_features.sql before registering stations.");
     }
     fail(error);
-    return { device: { id: data!.id, deviceCode: data!.device_code }, secret };
+    const registered = data as { id: string; device_code: string } | null;
+    if (!registered?.id) throw new DomainError("Device registration did not return a station.");
+    return { device: { id: registered.id, deviceCode: registered.device_code }, secret };
   }
 
   async setDeviceStatus(actor: Actor, deviceId: string, status: "active" | "disabled") {
@@ -763,13 +769,23 @@ export class PayStore {
   private async biometrics(ids: string[]) {
     const map = new Map<string, { status: string; consent_given_at: string | null; consent_version: string | null; descriptor: unknown; embedding_ciphertext: string | null; embedding_model: string | null; updated_at: string }>();
     if (ids.length === 0) return map;
-    const { data, error } = await this.supabase
+    const selected = await this.supabase
       .from("workforce_biometric_profiles")
-      .select("employee_id, status, consent_given_at, consent_version, descriptor, updated_at")
+      .select("employee_id, status, consent_given_at, consent_version, descriptor, embedding_ciphertext, embedding_model, updated_at")
       .in("employee_id", ids);
-    fail(error);
-    for (const row of data ?? []) {
-      map.set(row.employee_id, { ...row, embedding_ciphertext: null, embedding_model: null });
+    const fallback = selected.error?.message.includes("embedding_ciphertext")
+      ? await this.supabase
+          .from("workforce_biometric_profiles")
+          .select("employee_id, status, consent_given_at, consent_version, descriptor, updated_at")
+          .in("employee_id", ids)
+      : selected;
+    fail(fallback.error);
+    for (const row of fallback.data ?? []) {
+      map.set(row.employee_id, {
+        ...row,
+        embedding_ciphertext: "embedding_ciphertext" in row ? (row.embedding_ciphertext as string | null) : null,
+        embedding_model: "embedding_model" in row ? (row.embedding_model as string | null) : null,
+      });
     }
     return map;
   }

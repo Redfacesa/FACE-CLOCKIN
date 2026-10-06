@@ -49,14 +49,8 @@ export async function listFacePeople(): Promise<FacePerson[]> {
     .order("full_name");
   if (employees.error) throw new DomainError(employees.error.message);
   const ids = (employees.data ?? []).map((row) => row.id);
-  const bios = ids.length
-    ? await supabase
-        .from("workforce_biometric_profiles")
-        .select("employee_id, status, consent_given_at, descriptor")
-        .in("employee_id", ids)
-    : { data: [], error: null };
-  if (bios.error) throw new DomainError(bios.error.message);
-  const byEmployee = new Map((bios.data ?? []).map((row) => [row.employee_id, row]));
+  const bios = await loadProfiles(supabase, ids);
+  const byEmployee = new Map(bios.map((row) => [row.employee_id, row]));
   return (employees.data ?? []).map((row) => {
     const bio = byEmployee.get(row.id);
     return {
@@ -64,7 +58,7 @@ export async function listFacePeople(): Promise<FacePerson[]> {
       name: row.full_name,
       employeeCode: row.employee_code ?? "",
       consented: Boolean(bio?.consent_given_at),
-      enrolled: Boolean(bio?.consent_given_at && bio.status === "active" && hasTemplate(bio.descriptor)),
+      enrolled: Boolean(bio?.consent_given_at && bio.status === "active" && hasTemplate(bio)),
     };
   });
 }
@@ -75,27 +69,20 @@ export async function rememberFace(employeeId: string, frames: [string, string])
   const profile = await mustConsent(supabase, employeeId);
   const capture = await embedFrames(frames);
   const blob = encryptEmbedding(capture.embedding, biometricKey()).toString("base64");
-  const descriptor = {
-    v: 1,
-    encoding: "aes-gcm",
-    blob,
-    model: capture.model,
-    quality: capture.quality,
-  };
   const saved = await supabase
     .from("workforce_biometric_profiles")
     .update({
-      descriptor,
+      embedding_ciphertext: blob,
+      embedding_model: capture.model,
       status: "active",
       consent_version: profile.consent_version ?? NOTICE_VERSION,
     })
     .eq("id", profile.id)
     .eq("merchant_id", merchant.id);
+  if (saved.error?.message.includes("embedding_ciphertext")) {
+    throw new DomainError("Apply supabase/migrations/0002_redface_pay_clock_features.sql before saving a face.");
+  }
   if (saved.error) throw new DomainError(saved.error.message);
-  await supabase
-    .from("workforce_biometric_profiles")
-    .update({ embedding_ciphertext: blob, embedding_model: capture.model })
-    .eq("id", profile.id);
   await supabase.from("workforce_audit_log").insert({
     merchant_id: merchant.id,
     actor_user_id: user.id,
@@ -103,7 +90,7 @@ export async function rememberFace(employeeId: string, frames: [string, string])
     action: "biometric.enroll",
     entity_type: "workforce_employees",
     entity_id: employee.id,
-    detail: { model: capture.model, stored: "encrypted-embedding" },
+    detail: { model: capture.model, stored: "embedding_ciphertext" },
   });
   return { name: employee.full_name as string };
 }
@@ -111,18 +98,16 @@ export async function rememberFace(employeeId: string, frames: [string, string])
 export async function clockByFace(eventType: "CLOCK_IN" | "CLOCK_OUT", frames: [string, string]) {
   const { supabase, merchant, user } = await merchantContext();
   const capture = await embedFrames(frames);
-  const profiles = await supabase
-    .from("workforce_biometric_profiles")
-    .select("employee_id, descriptor, status, consent_given_at")
-    .eq("merchant_id", merchant.id)
-    .eq("modality", "face")
-    .eq("status", "active");
-  if (profiles.error) throw new DomainError(profiles.error.message);
+  const profiles = await loadProfiles(
+    supabase,
+    [],
+    merchant.id,
+  );
   const key = biometricKey();
-  const ranked = (profiles.data ?? [])
-    .filter((row) => row.consent_given_at)
+  const ranked = profiles
+    .filter((row) => row.status === "active" && row.consent_given_at)
     .map((row) => {
-      const stored = readEmbedding(row.descriptor, key);
+      const stored = readEmbedding(row, key);
       return stored ? { employeeId: row.employee_id as string, score: cosineSimilarity(capture.embedding, stored) } : null;
     })
     .filter((row): row is { employeeId: string; score: number } => Boolean(row))
@@ -184,16 +169,52 @@ async function mustConsent(supabase: Awaited<ReturnType<typeof merchantContext>>
   return row.data;
 }
 
-function hasTemplate(descriptor: unknown) {
+type ProfileRow = {
+  employee_id: string;
+  status: string;
+  consent_given_at: string | null;
+  descriptor: unknown;
+  embedding_ciphertext: string | null;
+};
+
+async function loadProfiles(
+  supabase: Awaited<ReturnType<typeof merchantContext>>["supabase"],
+  ids: string[],
+  merchantId?: string,
+): Promise<ProfileRow[]> {
+  let query = supabase
+    .from("workforce_biometric_profiles")
+    .select("employee_id, status, consent_given_at, descriptor, embedding_ciphertext");
+  if (merchantId) query = query.eq("merchant_id", merchantId).eq("modality", "face");
+  if (ids.length > 0) query = query.in("employee_id", ids);
+  if (!merchantId && ids.length === 0) return [];
+  const selected = await query;
+  if (selected.error?.message.includes("embedding_ciphertext")) {
+    let legacy = supabase.from("workforce_biometric_profiles").select("employee_id, status, consent_given_at, descriptor");
+    if (merchantId) legacy = legacy.eq("merchant_id", merchantId).eq("modality", "face");
+    if (ids.length > 0) legacy = legacy.in("employee_id", ids);
+    const fallback = await legacy;
+    if (fallback.error) throw new DomainError(fallback.error.message);
+    return (fallback.data ?? []).map((row) => ({ ...row, embedding_ciphertext: null }));
+  }
+  if (selected.error) throw new DomainError(selected.error.message);
+  return (selected.data ?? []) as ProfileRow[];
+}
+
+function hasTemplate(profile: { descriptor: unknown; embedding_ciphertext: string | null }) {
+  if (profile.embedding_ciphertext) return true;
+  const descriptor = profile.descriptor;
   if (!descriptor) return false;
   if (Array.isArray(descriptor)) return descriptor.length === 512;
-  if (typeof descriptor === "object" && descriptor && "blob" in descriptor) return Boolean((descriptor as { blob?: string }).blob);
+  if (typeof descriptor === "object" && "blob" in descriptor) return Boolean((descriptor as { blob?: string }).blob);
   return false;
 }
 
-function readEmbedding(descriptor: unknown, key: ReturnType<typeof biometricKey>): number[] | null {
+function readEmbedding(profile: { descriptor: unknown; embedding_ciphertext: string | null }, key: ReturnType<typeof biometricKey>): number[] | null {
+  if (profile.embedding_ciphertext) return decryptEmbedding(Buffer.from(profile.embedding_ciphertext, "base64"), key);
+  const descriptor = profile.descriptor;
   if (Array.isArray(descriptor) && descriptor.length === 512 && descriptor.every((value) => typeof value === "number")) {
-    return descriptor as number[];
+    return descriptor;
   }
   if (!descriptor || typeof descriptor !== "object" || !("blob" in descriptor)) return null;
   const blob = (descriptor as { blob?: string }).blob;

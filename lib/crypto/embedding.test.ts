@@ -6,7 +6,8 @@ test("embeddings round-trip through AES-GCM and a wrong key fails", () => {
   const key = loadBiometricKey(Buffer.alloc(32, 7).toString("base64"));
   const values = Array.from({ length: 512 }, (_, index) => (index - 256) / 256);
   const blob = encryptEmbedding(values, key);
-  const decoded = decryptEmbedding(blob, key);
+  assert.equal(blob.length, 12 + 16 + 512 * 4);
+  const decoded = decryptEmbedding(Buffer.from(blob.toString("base64"), "base64"), key);
   assert.equal(decoded.length, 512);
   assert.ok(Math.abs(decoded[0] - values[0]) < 1e-6);
   assert.ok(Math.abs(decoded[511] - values[511]) < 1e-6);

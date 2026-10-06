@@ -56,7 +56,7 @@ export function embeddingFromNumbers(values: number[]): Float32Array {
   return Float32Array.from(values);
 }
 
-/** AES-256-GCM blob: 12-byte IV, 16-byte tag, then ciphertext. */
+/** AES-256-GCM blob. Stored base64 is 12-byte nonce, 16-byte authentication tag, then ciphertext. */
 export function encryptEmbedding(values: number[], key: Buffer): Buffer {
   const embedding = embeddingFromNumbers(values);
   const plain = Buffer.from(embedding.buffer, embedding.byteOffset, embedding.byteLength);
