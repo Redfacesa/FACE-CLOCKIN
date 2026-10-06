@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import type { FloorSnapshot } from "@/lib/domain/floor";
@@ -123,7 +124,7 @@ export async function requireActor(): Promise<Actor> {
   return actor;
 }
 
-export async function getStore(): Promise<AppStore> {
+export const getStore = cache(async (): Promise<AppStore> => {
   if (!payConfig().enabled) return promisify(getDevStore());
   const session = await paySession();
   if (!session?.user.email) redirect("/login");
@@ -132,18 +133,18 @@ export async function getStore(): Promise<AppStore> {
     redirect(`/login?error=${encodeURIComponent("This Redface Pay account is not linked to a merchant.")}`);
   }
   return promisify(new PayStore(session.supabase, merchant.id, merchant.name));
-}
+});
 
 /** Local station credential check. Pay mode does not use this path. */
 export function clockStore(): DevStore {
   return getDevStore();
 }
 
-export async function workplace() {
+export const workplace = cache(async function workplace() {
   const actor = await requireActor();
   const store = await getStore();
   const locations = await store.listLocations(actor);
   return { actor, store, location: locations[0] ?? null, locations };
-}
+});
 
 export type { SessionActor };

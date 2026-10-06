@@ -519,10 +519,13 @@ export class PayStore {
   async floor(actor: Actor, locationId: string, now = new Date(), departmentId?: string) {
     this.assertMerchant(actor, locationId);
     const workDate = localDate(now, TZ);
-    const people = (await this.employeeRows(locationId)).filter((employee) => employee.employment_status === "active");
-    const events = await this.eventsOn(workDate);
-    const shifts = await this.shiftsOn(workDate);
-    const leave = await this.leaveOn(workDate);
+    const [employeeRows, events, shifts, leave] = await Promise.all([
+      this.employeeRows(locationId),
+      this.eventsOn(workDate),
+      this.shiftsOn(workDate),
+      this.leaveOn(workDate),
+    ]);
+    const people = employeeRows.filter((employee) => employee.employment_status === "active");
     const cards = people
       .filter((employee) => !departmentId || employee.department === departmentId)
       .filter((employee) => actor.role !== "employee" || employee.id === actor.employeeId)

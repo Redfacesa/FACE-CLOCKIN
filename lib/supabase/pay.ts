@@ -41,16 +41,9 @@ export async function paySession(): Promise<{ supabase: SupabaseClient; user: Us
   const access = jar.get("sb_access")?.value;
   const refresh = jar.get("sb_refresh")?.value;
   const supabase = payClient();
-  if (access) {
-    const { data, error } = await supabase.auth.getUser(access);
-    if (!error && data.user) {
-      await supabase.auth.setSession({ access_token: access, refresh_token: refresh || access });
-      return { supabase, user: data.user };
-    }
-  }
-  if (!refresh) return null;
-  const refreshed = await supabase.auth.refreshSession({ refresh_token: refresh });
-  if (refreshed.error || !refreshed.data.session || !refreshed.data.user) return null;
-  await savePaySession(refreshed.data.session.access_token, refreshed.data.session.refresh_token);
-  return { supabase, user: refreshed.data.user };
+  if (!access) return null;
+  const { data, error } = await supabase.auth.getUser(access);
+  if (error || !data.user) return null;
+  await supabase.auth.setSession({ access_token: access, refresh_token: refresh || access });
+  return { supabase, user: data.user };
 }
