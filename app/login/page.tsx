@@ -20,9 +20,11 @@ export default async function LoginPage({
       </section>
       <form className="login-card" action={login}>
         <p className="product">Face Clock</p>
-        <h1>Welcome back</h1>
+        <h1>Admin sign in</h1>
         <p className="muted">
-          {pay ? "Sign in with the same Redface Pay merchant account." : "Sign in to the restaurant floor."}
+          {pay
+            ? "Managers sign in here to capture faces and run the restaurant. Employees use the camera."
+            : "Managers sign in here. Employees use the camera."}
         </p>
         {params.error ? <p className="banner bad">{params.error}</p> : null}
         <label>
@@ -33,7 +35,8 @@ export default async function LoginPage({
           Password
           <input name="password" type="password" autoComplete="current-password" required placeholder="Password" />
         </label>
-        <button type="submit">Login</button>
+        <button type="submit">Admin sign in</button>
+        <a href="/">Back to the camera</a>
         {!pay && process.env.NODE_ENV !== "production" ? (
           <p className="muted">Development: admin@facelock.local / dev-admin-pass</p>
         ) : null}

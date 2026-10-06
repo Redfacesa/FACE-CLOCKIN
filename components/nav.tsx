@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const LINKS = [
+  { href: "/", label: "Front camera" },
   { href: "/dashboard", label: "Dashboard" },
   { href: "/employees", label: "Employees" },
   { href: "/clock", label: "Face registry" },
@@ -21,7 +22,7 @@ export function Nav({ role }: { role: string }) {
   return (
     <nav className="nav">
       {LINKS.filter((link) => !link.roles || link.roles.includes(role)).map((link) => (
-        <Link key={link.href} href={link.href} className={pathname.startsWith(link.href) ? "active" : ""}>
+        <Link key={link.href} href={link.href} className={(link.href === "/" ? pathname === "/" : pathname.startsWith(link.href)) ? "active" : ""}>
           {link.label}
         </Link>
       ))}

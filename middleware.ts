@@ -43,6 +43,7 @@ function finish(response: NextResponse, refreshed: { access: string; refresh: st
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   if (pathname.startsWith("/api/devices")) return NextResponse.next();
+  const isCamera = pathname === "/" || pathname === "/api/face/clock";
   const session = await readSession(request.cookies.get("fc_session")?.value);
   const pay = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
   const refresh = request.cookies.get("sb_refresh")?.value ?? "";
@@ -51,7 +52,7 @@ export async function middleware(request: NextRequest) {
   if (pay && refresh && !tokenUnexpired(access)) {
     refreshed = await refreshedPay(refresh);
     if (!refreshed) {
-      if (pathname === "/login") return NextResponse.next();
+      if (pathname === "/login" || isCamera) return NextResponse.next();
       return NextResponse.redirect(new URL("/login", request.url));
     }
     access = refreshed.access;
@@ -64,6 +65,7 @@ export async function middleware(request: NextRequest) {
     if (signedIn) return finish(NextResponse.redirect(new URL("/dashboard", request.url)), refreshed);
     return finish(NextResponse.next(), refreshed);
   }
+  if (isCamera) return finish(NextResponse.next({ request }), refreshed);
   if (!signedIn) {
     const response = NextResponse.redirect(new URL("/login", request.url));
     if (session && pay && !payAccess) response.cookies.delete("fc_session");

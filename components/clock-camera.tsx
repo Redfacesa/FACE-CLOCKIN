@@ -3,11 +3,15 @@
 import { useEffect, useRef, useState } from "react";
 import type { FacePerson } from "@/lib/face/memory";
 
-export function ClockCamera({ people }: { people: FacePerson[] }) {
+export function ClockCamera({ people, mode = "enroll" }: { people: FacePerson[]; mode?: "enroll" | "kiosk" }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [roster, setRoster] = useState(people);
   const [employeeId, setEmployeeId] = useState(people.find((person) => person.consented)?.id ?? "");
-  const [message, setMessage] = useState("Save each employee's face once. Clock in stays off until that face is stored.");
+  const [message, setMessage] = useState(
+    mode === "kiosk"
+      ? "Look at the camera. A face is recognised only after an admin has captured it."
+      : "Capture each employee's face once. The front camera cannot recognise anyone until that face is saved.",
+  );
   const [busy, setBusy] = useState(false);
   const consented = roster.filter((person) => person.consented);
   const savedCount = roster.filter((person) => person.enrolled).length;
@@ -70,36 +74,45 @@ export function ClockCamera({ people }: { people: FacePerson[] }) {
         <p>{message}</p>
       </div>
       <div className="panel" style={{ display: "grid", gap: "0.8rem", alignContent: "start" }}>
-        <h2>Save a face</h2>
-        <p className="muted">Do this once per employee. Consent is already recorded. The saved face is an encrypted template on their Redface Pay record, not a photo.</p>
-        <label>
-          Employee
-          <select value={employeeId} onChange={(event) => setEmployeeId(event.target.value)}>
-            {consented.length === 0 ? <option value="">No consented employees</option> : null}
-            {consented.map((person) => (
-              <option key={person.id} value={person.id}>
-                {person.name} · {person.enrolled ? "face saved" : "consent only"}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button type="button" disabled={busy || !employeeId} onClick={() => submit("/api/face/enroll", { employeeId })}>
-          Save this face
-        </button>
-        <h2>Clock with the camera</h2>
-        <p className="muted">
-          {savedCount === 0
-            ? "No faces are saved yet. Clock in and clock out stay off until you press Save this face."
-            : `${savedCount} saved ${savedCount === 1 ? "face" : "faces"}. The camera matches whoever is in front of it.`}
-        </p>
-        <div className="actions">
-          <button type="button" disabled={busy || savedCount === 0} onClick={() => submit("/api/face/clock", { eventType: "CLOCK_IN" })}>
-            Clock in
-          </button>
-          <button className="secondary" type="button" disabled={busy || savedCount === 0} onClick={() => submit("/api/face/clock", { eventType: "CLOCK_OUT" })}>
-            Clock out
-          </button>
-        </div>
+        {mode === "kiosk" ? (
+          <>
+            <h2>Clock in</h2>
+            <p className="muted">The camera matches a face that an admin has already captured. It does not store a photograph.</p>
+            <div className="actions">
+              <button type="button" disabled={busy} onClick={() => submit("/api/face/clock", { eventType: "CLOCK_IN" })}>
+                Clock in
+              </button>
+              <button className="secondary" type="button" disabled={busy} onClick={() => submit("/api/face/clock", { eventType: "CLOCK_OUT" })}>
+                Clock out
+              </button>
+            </div>
+            <a className="secondary button" href="/login">
+              Admin
+            </a>
+          </>
+        ) : (
+          <>
+            <h2>Capture a face</h2>
+            <p className="muted">
+              Do this once per employee, after consent. The front camera stays unable to recognise them until this capture is saved.
+              {savedCount > 0 ? ` ${savedCount} ${savedCount === 1 ? "face is" : "faces are"} saved.` : ""}
+            </p>
+            <label>
+              Employee
+              <select value={employeeId} onChange={(event) => setEmployeeId(event.target.value)}>
+                {consented.length === 0 ? <option value="">No consented employees</option> : null}
+                {consented.map((person) => (
+                  <option key={person.id} value={person.id}>
+                    {person.name} · {person.enrolled ? "face saved" : "not captured"}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button type="button" disabled={busy || !employeeId} onClick={() => submit("/api/face/enroll", { employeeId })}>
+              Save this face
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

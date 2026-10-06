@@ -221,6 +221,18 @@ th { color: var(--muted); font-weight: 650; font-size: 0.72rem; letter-spacing: 
 .check input { width: auto; }
 .empty { color: var(--muted); margin: 0.4rem 0; }
 .camera-frame { width: 100%; border-radius: 16px; background: #05080f; aspect-ratio: 4 / 3; object-fit: cover; }
+.kiosk {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background:
+    radial-gradient(800px 500px at 50% 0%, rgba(255, 42, 42, 0.16), transparent 55%),
+    #070b14;
+}
+.kiosk-card { width: min(920px, 100%); display: grid; gap: 0.8rem; }
+.kiosk-card h1 { margin: 0; font-size: 2rem; }
+.kiosk .layout { align-items: start; }
 @media (max-width: 1100px) {
   .grid { grid-template-columns: repeat(3, 1fr); }
   .app { grid-template-columns: 1fr; }

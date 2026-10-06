@@ -31,9 +31,16 @@ function biometricKey() {
   return loadBiometricKey(raw);
 }
 
-async function merchantContext() {
+async function merchantContext(purpose: "admin" | "kiosk" = "admin") {
   const session = await paySession();
-  if (!session?.user.email) throw new DomainError("Sign in with Redface Pay before using the camera.", 401);
+  if (!session?.user.email) {
+    throw new DomainError(
+      purpose === "kiosk"
+        ? "Open Admin on this screen and sign in once. The camera only recognises faces an admin has already captured."
+        : "Sign in from Admin before capturing a face.",
+      401,
+    );
+  }
   const merchant = await resolvePayMerchant(session.supabase, session.user.email);
   if (!merchant) throw new DomainError("This Redface Pay account is not linked to a merchant.", 403);
   return { ...session, merchant };
@@ -96,7 +103,7 @@ export async function rememberFace(employeeId: string, frames: [string, string])
 }
 
 export async function clockByFace(eventType: "CLOCK_IN" | "CLOCK_OUT", frames: [string, string]) {
-  const { supabase, merchant, user } = await merchantContext();
+  const { supabase, merchant, user } = await merchantContext("kiosk");
   const capture = await embedFrames(frames);
   const profiles = await loadProfiles(
     supabase,
@@ -115,7 +122,7 @@ export async function clockByFace(eventType: "CLOCK_IN" | "CLOCK_OUT", frames: [
   const best = ranked[0];
   const second = ranked[1];
   if (!best || best.score < MATCH_THRESHOLD) {
-    throw new DomainError("No saved face matched. Save this person's face first, with consent.");
+    throw new DomainError("This face is not recognised. An admin must capture it before the camera can match them.", 404);
   }
   if (second && best.score - second.score < 0.05) {
     throw new DomainError("Two saved faces were too similar. Ask the person to face the camera again.");
@@ -248,7 +255,10 @@ async function embedFrames(frames: [string, string]): Promise<Capture> {
   } catch (error) {
     if (error instanceof DomainError) throw error;
     const message = error instanceof Error ? error.message : "The face check failed.";
-    throw new DomainError(message.includes("ENOENT") ? "Python is not available on this computer." : message);
+    if (message.includes("ENOENT") || message.includes("python3")) {
+      throw new DomainError("Face recognition runs on the restaurant computer. This web server cannot read the camera frames.", 503);
+    }
+    throw new DomainError("The camera could not read a face. Face the camera and try again.");
   } finally {
     await rm(folder, { recursive: true, force: true });
   }
