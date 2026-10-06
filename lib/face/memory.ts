@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -237,10 +238,18 @@ async function embedFrames(frames: [string, string]): Promise<Capture> {
     await writeFile(first, Buffer.from(frames[0], "base64"));
     await writeFile(second, Buffer.from(frames[1], "base64"));
     const script = path.join(process.cwd(), "device", "station", "embed_frames.py");
-    const { stdout } = await execFileAsync("python3", [script, first, second], {
+    const python = process.env.FACE_PYTHON && existsSync(process.env.FACE_PYTHON)
+      ? process.env.FACE_PYTHON
+      : existsSync("/usr/bin/python3")
+        ? "/usr/bin/python3"
+        : "";
+    if (!python) {
+      throw new DomainError("Face recognition runs on the restaurant computer. This web server does not have Python.", 503);
+    }
+    const { stdout } = await execFileAsync(python, [script, first, second], {
       timeout: 120_000,
       maxBuffer: 2_000_000,
-      env: process.env,
+      env: { ...process.env, PATH: `/usr/bin:/bin:${process.env.PATH ?? ""}` },
     });
     const line = stdout
       .split("\n")
