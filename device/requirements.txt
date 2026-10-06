@@ -1,0 +1,5 @@
+cryptography>=42
+insightface>=0.7.3
+onnxruntime>=1.17
+opencv-python-headless>=4.9
+numpy>=1.26
