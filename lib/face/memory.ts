@@ -1,5 +1,4 @@
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -230,6 +229,31 @@ function readEmbedding(profile: { descriptor: unknown; embedding_ciphertext: str
   return decryptEmbedding(Buffer.from(blob, "base64"), key);
 }
 
+async function runFacePython(script: string, first: string, second: string) {
+  const candidates = [process.env.FACE_PYTHON, "/usr/bin/python3", "/usr/local/bin/python3", "python3"].filter(
+    (item): item is string => Boolean(item),
+  );
+  let missing = true;
+  let detail = "Python could not be started.";
+  for (const python of candidates) {
+    try {
+      const { stdout } = await execFileAsync(python, [script, first, second], {
+        timeout: 120_000,
+        maxBuffer: 2_000_000,
+        env: { ...process.env, PATH: `/usr/bin:/bin:/usr/local/bin:${process.env.PATH ?? ""}` },
+      });
+      return stdout;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (message.includes("ENOENT")) continue;
+      missing = false;
+      detail = message;
+      break;
+    }
+  }
+  throw new DomainError(missing ? "Python could not be started on this computer." : detail.slice(0, 240), 503);
+}
+
 async function embedFrames(frames: [string, string]): Promise<Capture> {
   const folder = await mkdtemp(path.join(tmpdir(), "fc-face-"));
   const first = path.join(folder, "first.jpg");
@@ -238,19 +262,7 @@ async function embedFrames(frames: [string, string]): Promise<Capture> {
     await writeFile(first, Buffer.from(frames[0], "base64"));
     await writeFile(second, Buffer.from(frames[1], "base64"));
     const script = path.join(process.cwd(), "device", "station", "embed_frames.py");
-    const python = process.env.FACE_PYTHON && existsSync(process.env.FACE_PYTHON)
-      ? process.env.FACE_PYTHON
-      : existsSync("/usr/bin/python3")
-        ? "/usr/bin/python3"
-        : "";
-    if (!python) {
-      throw new DomainError("Face recognition runs on the restaurant computer. This web server does not have Python.", 503);
-    }
-    const { stdout } = await execFileAsync(python, [script, first, second], {
-      timeout: 120_000,
-      maxBuffer: 2_000_000,
-      env: { ...process.env, PATH: `/usr/bin:/bin:${process.env.PATH ?? ""}` },
-    });
+    const stdout = await runFacePython(script, first, second);
     const line = stdout
       .split("\n")
       .map((item) => item.trim())
@@ -263,10 +275,6 @@ async function embedFrames(frames: [string, string]): Promise<Capture> {
     return { embedding: parsed.embedding, quality: parsed.quality, model: parsed.model };
   } catch (error) {
     if (error instanceof DomainError) throw error;
-    const message = error instanceof Error ? error.message : "The face check failed.";
-    if (message.includes("ENOENT") || message.includes("python3")) {
-      throw new DomainError("Face recognition runs on the restaurant computer. This web server cannot read the camera frames.", 503);
-    }
     throw new DomainError("The camera could not read a face. Face the camera and try again.");
   } finally {
     await rm(folder, { recursive: true, force: true });
