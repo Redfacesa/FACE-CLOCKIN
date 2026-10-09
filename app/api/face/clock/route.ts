@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { DomainError } from "@/lib/domain/model";
 import { clockByFace } from "@/lib/face/memory";
+import { faceRequestIsLocal, rejectRemoteFaceRequest } from "@/lib/face/same-device";
 
 const bodySchema = z.object({
   eventType: z.enum(["CLOCK_IN", "CLOCK_OUT"]),
@@ -9,6 +10,7 @@ const bodySchema = z.object({
 });
 
 export async function POST(request: Request) {
+  if (!faceRequestIsLocal(request)) return rejectRemoteFaceRequest();
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "The camera did not send two frames." }, { status: 400 });
   try {

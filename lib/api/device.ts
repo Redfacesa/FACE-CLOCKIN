@@ -21,7 +21,7 @@ export function payStationPaused() {
   return NextResponse.json(
     {
       error:
-        "Station sync uses the local store. With Redface Pay sign-in, register the station after migration 0477 and a service credential.",
+        "Station bearer sync stays paused. Use the camera on this computer. Attendance is written through the signed-in session.",
     },
     { status: 503 },
   );

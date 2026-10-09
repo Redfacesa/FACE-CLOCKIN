@@ -135,7 +135,7 @@ export async function clockByFace(eventType: "CLOCK_IN" | "CLOCK_OUT", frames: [
     p_method: "face",
     p_match_score: Number(best.score.toFixed(4)),
     p_device_label: "face-clockin-camera",
-    p_notes: "Live face match. Template only, no photograph stored.",
+    p_notes: "Face match on this computer. No camera frame stored.",
   });
   if (recorded.error) throw new DomainError(recorded.error.message);
   await supabase.from("workforce_audit_log").insert({

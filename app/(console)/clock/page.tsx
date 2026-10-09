@@ -17,7 +17,7 @@ export default async function ClockPage() {
         <div>
           <h1>Face registry</h1>
           <p className="muted">
-            Capture a face here before the front camera can recognise that person. The photograph is discarded. Only the encrypted template is saved.
+            Capture a face on this computer before the front camera can recognise that person. The photograph is discarded. Only the encrypted template is saved. Supabase does not receive the camera frames.
           </p>
         </div>
       </div>

@@ -9,14 +9,20 @@ export function ClockCamera({ people, mode = "enroll" }: { people: FacePerson[];
   const [employeeId, setEmployeeId] = useState(people.find((person) => person.consented)?.id ?? "");
   const [message, setMessage] = useState(
     mode === "kiosk"
-      ? "Look at the camera. A face is recognised only after an admin has captured it."
-      : "Capture each employee's face once. The front camera cannot recognise anyone until that face is saved.",
+      ? "Use this screen on the computer running Face Clock. A face is recognised only after an admin has captured it here."
+      : "Capture each employee's face on this computer. The front camera cannot recognise anyone until that face is saved.",
   );
   const [busy, setBusy] = useState(false);
+  const [localOnly, setLocalOnly] = useState(true);
   const consented = roster.filter((person) => person.consented);
   const savedCount = roster.filter((person) => person.enrolled).length;
 
   useEffect(() => {
+    if (!localCameraHost(window.location.hostname)) {
+      setLocalOnly(false);
+      setMessage("Open http://localhost:3000 on this computer. A tablet camera cannot reach the face engine through localhost, and frames are not sent to another machine.");
+      return;
+    }
     let stream: MediaStream | null = null;
     let cancelled = false;
     navigator.mediaDevices
@@ -46,8 +52,9 @@ export function ClockCamera({ people, mode = "enroll" }: { people: FacePerson[];
   }
 
   async function submit(path: string, extra: Record<string, string>) {
+    if (!localCameraHost(window.location.hostname)) return;
     setBusy(true);
-    setMessage("Reading the live face. The photo is not stored.");
+    setMessage("Checking the face on this computer. The photo is not stored.");
     try {
       const captured = await frames();
       const response = await fetch(path, {
@@ -77,12 +84,12 @@ export function ClockCamera({ people, mode = "enroll" }: { people: FacePerson[];
         {mode === "kiosk" ? (
           <>
             <h2>Clock in</h2>
-            <p className="muted">The camera matches a face that an admin has already captured. It does not store a photograph.</p>
+            <p className="muted">The match stays on this computer. Supabase receives the employee, the score, and the clock event. A slight movement is required. That is not a strong anti-spoof check.</p>
             <div className="actions">
-              <button type="button" disabled={busy} onClick={() => submit("/api/face/clock", { eventType: "CLOCK_IN" })}>
+              <button type="button" disabled={busy || !localOnly} onClick={() => submit("/api/face/clock", { eventType: "CLOCK_IN" })}>
                 Clock in
               </button>
-              <button className="secondary" type="button" disabled={busy} onClick={() => submit("/api/face/clock", { eventType: "CLOCK_OUT" })}>
+              <button className="secondary" type="button" disabled={busy || !localOnly} onClick={() => submit("/api/face/clock", { eventType: "CLOCK_OUT" })}>
                 Clock out
               </button>
             </div>
@@ -108,7 +115,7 @@ export function ClockCamera({ people, mode = "enroll" }: { people: FacePerson[];
                 ))}
               </select>
             </label>
-            <button type="button" disabled={busy || !employeeId} onClick={() => submit("/api/face/enroll", { employeeId })}>
+            <button type="button" disabled={busy || !localOnly || !employeeId} onClick={() => submit("/api/face/enroll", { employeeId })}>
               Save this face
             </button>
           </>
@@ -116,6 +123,10 @@ export function ClockCamera({ people, mode = "enroll" }: { people: FacePerson[];
       </div>
     </div>
   );
+}
+
+function localCameraHost(hostname: string) {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
 }
 
 function snap(video: HTMLVideoElement) {
