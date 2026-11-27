@@ -2,117 +2,163 @@ const MODEL = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.15/model";
 
 export function faceCapture({ heading, detail, mode, postUrl }) {
   const enroll = mode === "enroll";
+  const steps = enroll
+    ? [["blink", "Blink"], ["center", "Ahead"], ["left", "One side"], ["right", "Other side"], ["up", "Chin up"], ["down", "Chin down"]]
+    : [["blink", "Blink"]];
   return `<section class="card" id="face-box">
     <h2>${heading}</h2>
     <p>${detail}</p>
-    ${enroll ? `<label class="check"><input type="checkbox" id="face-consent"> The employee consents to a facial template being stored for attendance. It can be deleted from this profile. This is separate from any ordinary photograph.</label>` : ""}
-    <div style="position:relative;max-width:420px">
-      <video id="face-camera" autoplay muted playsinline style="width:100%;border-radius:50%;background:#000;aspect-ratio:1;object-fit:cover"></video>
-    </div>
-    <p id="face-state">${enroll ? "Consent, then open the camera. The employee blinks once, then follows five angles." : "Open the camera and blink once."}</p>
-    <p><button class="button" type="button" id="face-start">${enroll ? "Start face registration" : "Open camera"}</button></p>
+    ${enroll ? `<label class="check"><input type="checkbox" id="face-consent"> The employee consents to a facial template being stored for attendance. It can be deleted from this profile.</label>` : ""}
+    <video id="face-camera" autoplay muted playsinline style="width:min(100%,420px);border-radius:18px;background:#000;aspect-ratio:4/3;object-fit:cover;transform:scaleX(-1)"></video>
+    <ol id="face-steps" style="display:flex;gap:8px;flex-wrap:wrap;list-style:none;padding:0">${steps.map(([id, label]) => `<li data-step="${id}" style="padding:6px 10px;border:1px solid #2c2c2c;border-radius:999px">${label}</li>`).join("")}</ol>
+    <p id="face-state">${enroll ? "Tick consent, then start. The highlighted step is the one being captured." : "Start the camera and blink once."}</p>
+    <p><button class="button" type="button" id="face-start">${enroll ? "Start face registration" : "Open camera"}</button> <button class="button quiet" type="button" id="face-capture" hidden>Capture this step</button></p>
   </section>
   <script type="module">
     const state = document.querySelector("#face-state");
     const video = document.querySelector("#face-camera");
+    const captureButton = document.querySelector("#face-capture");
     const enroll = ${enroll ? "true" : "false"};
+    const steps = ${JSON.stringify(steps.map(([id]) => id))};
+    const prompts = {
+      blink: "Blink once. The camera stays on.",
+      center: "Look straight ahead and hold still.",
+      left: "Turn your head to either side and hold.",
+      right: "Turn back to the other side and hold.",
+      up: "Tilt your chin up a little and hold.",
+      down: "Tilt your chin down a little and hold.",
+    };
     document.querySelector("#face-start").onclick = async () => {
       if (enroll && !document.querySelector("#face-consent").checked) {
-        state.textContent = "Record the employee's consent before the camera opens.";
+        state.textContent = "Tick the consent box before the camera opens.";
         return;
       }
-      state.textContent = "Loading the face model…";
-      const faceapi = await import("https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.15/dist/face-api.esm.js");
-      await faceapi.nets.tinyFaceDetector.loadFromUri(${JSON.stringify(MODEL)});
-      await faceapi.nets.faceLandmark68Net.loadFromUri(${JSON.stringify(MODEL)});
-      await faceapi.nets.faceRecognitionNet.loadFromUri(${JSON.stringify(MODEL)});
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
-      video.srcObject = stream;
-      await video.play();
-      const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 });
-      let running = true;
-      const stop = () => { running = false; stream.getTracks().forEach((track) => track.stop()); };
-      const steps = enroll
-        ? ["blink", "center", "left", "right", "up", "down"]
-        : ["blink"];
-      let step = 0;
-      let held = 0;
-      let baseline = 0;
-      let sideSign = 0;
-      const samples = [];
-      const prompts = {
-        blink: "Blink once so we know a person is present.",
-        center: "Look straight ahead and hold still.",
-        left: "Turn your head to either side and hold.",
-        right: "Turn your head to the other side and hold.",
-        up: "Tilt your chin up slightly.",
-        down: "Tilt your chin down slightly.",
-      };
-      state.textContent = prompts[steps[0]];
-      const watch = async () => {
-        if (!running) return;
-        const found = await faceapi.detectSingleFace(video, options).withFaceLandmarks().withFaceDescriptor();
-        if (found && running) {
-          const points = found.landmarks.positions;
-          const pose = headPose(points);
-          const name = steps[step];
-          const ready = name === "blink" ? blinked(points) : poseHeld(name, pose, baseline);
-          held = ready ? held + 1 : 0;
-          if (held >= 2) {
-            if (name === "center") baseline = pose.pitch;
-            if (name === "left") sideSign = Math.sign(pose.yaw) || 1;
-            if (name !== "blink") samples.push({ pose: name, descriptor: Array.from(found.descriptor) });
-            step += 1;
-            held = 0;
-            if (step >= steps.length) {
-              stop();
-              await submit(name === "blink" && !enroll ? Array.from(found.descriptor) : null, samples);
-              return;
+      try {
+        state.textContent = "Loading the face model…";
+        const faceapi = await import("https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.15/dist/face-api.esm.js");
+        await faceapi.nets.tinyFaceDetector.loadFromUri(${JSON.stringify(MODEL)});
+        await faceapi.nets.faceLandmark68Net.loadFromUri(${JSON.stringify(MODEL)});
+        await faceapi.nets.faceRecognitionNet.loadFromUri(${JSON.stringify(MODEL)});
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } } });
+        video.srcObject = stream;
+        await video.play();
+        if (!video.videoWidth) await new Promise((resolve) => video.onloadeddata = resolve);
+        const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 160, scoreThreshold: 0.35 });
+        let running = true;
+        let step = 0;
+        let held = 0;
+        let baseline = null;
+        let sideSign = 0;
+        let openLevel = null;
+        let sawBlink = false;
+        let latest = null;
+        const samples = [];
+        const stop = () => { running = false; captureButton.hidden = true; stream.getTracks().forEach((track) => track.stop()); };
+        captureButton.hidden = false;
+        captureButton.onclick = () => { if (latest) take(latest, true); };
+        state.textContent = prompts.blink;
+        mark();
+        const watch = async () => {
+          if (!running) return;
+          try {
+            if (!video.videoWidth) {
+              state.textContent = "Waiting for the camera picture…";
+            } else {
+              const found = await faceapi.detectSingleFace(video, options).withFaceLandmarks().withFaceDescriptor();
+              latest = found || null;
+              if (!found) {
+                held = 0;
+                state.textContent = "No face in the oval. Move closer and face the camera. " + prompts[steps[step]];
+              } else {
+                const points = found.landmarks.positions;
+                const pose = headPose(points);
+                const ear = (eyeOpen(points, 36) + eyeOpen(points, 42)) / 2;
+                if (openLevel == null) openLevel = ear;
+                if (ear < openLevel * 0.75) sawBlink = true;
+                else openLevel = openLevel * 0.85 + ear * 0.15;
+                const name = steps[step];
+                const ready = name === "blink" ? sawBlink && ear > openLevel * 0.9 : poseReady(name, pose);
+                held = ready ? held + 1 : 0;
+                state.textContent = (ready ? "Hold still. " : "Face seen. ") + prompts[name];
+                if (held >= 2) take(found, false);
+              }
             }
-            state.textContent = prompts[steps[step]];
+          } catch (error) {
+            state.textContent = error.message || "The camera frame could not be read. It will try again.";
+          }
+          if (running) setTimeout(watch, 300);
+        };
+        function take(found, manual) {
+          if (!running) return;
+          const name = steps[step];
+          if (name === "blink" && !manual && !sawBlink) return;
+          const pose = headPose(found.landmarks.positions);
+          if (name === "center") baseline = pose.pitch;
+          if (name === "left") sideSign = Math.sign(pose.yaw) || 1;
+          if (name !== "blink") samples.push({ pose: name, descriptor: Array.from(found.descriptor) });
+          const descriptor = Array.from(found.descriptor);
+          step += 1;
+          held = 0;
+          sawBlink = false;
+          mark();
+          if (step >= steps.length) {
+            captureButton.hidden = true;
+            submit(enroll ? null : descriptor, samples, stop);
+            return;
+          }
+          state.textContent = prompts[steps[step]];
+        }
+        function poseReady(name, pose) {
+          if (name === "center") return Math.abs(pose.yaw) < 0.2;
+          if (name === "left") return Math.abs(pose.yaw) > 0.14;
+          if (name === "right") return sideSign !== 0 && pose.yaw * sideSign < -0.14;
+          if (baseline == null) return false;
+          if (name === "up") return pose.pitch < baseline - 0.05;
+          if (name === "down") return pose.pitch > baseline + 0.05;
+          return false;
+        }
+        function mark() {
+          document.querySelectorAll("#face-steps li").forEach((item) => {
+            const index = steps.indexOf(item.dataset.step);
+            item.style.borderColor = index === step ? "#9f1d2d" : "#2c2c2c";
+            item.style.color = index < step ? "#f5f5f5" : "#a3a3a3";
+          });
+        }
+        watch();
+        async function submit(descriptor, captured, finish) {
+          state.textContent = enroll ? "Saving the facial template…" : "Checking the face…";
+          try {
+            const extra = window.faceRequest?.() ?? {};
+            const body = enroll ? { samples: captured, ...extra } : { descriptor, method: "face", ...extra };
+            const response = await fetch(${JSON.stringify(postUrl)}, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.error || "The face was not accepted.");
+            finish();
+            if (enroll) { state.textContent = "Facial recognition: registered."; return; }
+            window.onFaceIdentified?.(payload, descriptor);
+          } catch (error) {
+            state.textContent = error.message;
           }
         }
-        if (running) setTimeout(watch, 280);
-      };
-      let eyesWereClosed = false;
-      function blinked(points) {
-        const open = eyeOpen(points, 36) + eyeOpen(points, 42);
-        if (open < 0.4) eyesWereClosed = true;
-        return eyesWereClosed && open > 0.5;
-      }
-      watch();
-      async function submit(descriptor, captured) {
-        state.textContent = enroll ? "Saving the facial template…" : "Checking the face…";
-        const extra = window.faceRequest?.() ?? {};
-        const body = enroll ? { samples: captured, ...extra } : { descriptor, method: "face", ...extra };
-        const response = await fetch(${JSON.stringify(postUrl)}, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-        const payload = await response.json();
-        if (!response.ok) { state.textContent = payload.error || "The face was not accepted."; return; }
-        if (enroll) { state.textContent = "Facial recognition: registered."; return; }
-        window.onFaceIdentified?.(payload, descriptor);
+      } catch (error) {
+        state.textContent = error.message || "The camera could not start.";
       }
     };
     function eyeOpen(points, start) {
       const distance = (a, b) => Math.hypot(points[a].x - points[b].x, points[a].y - points[b].y);
-      return (distance(start + 1, start + 5) + distance(start + 2, start + 4)) / (2 * distance(start, start + 3));
+      const width = distance(start, start + 3) || 1;
+      return (distance(start + 1, start + 5) + distance(start + 2, start + 4)) / (2 * width);
     }
     function headPose(points) {
-      const average = (items) => items.reduce((sum, point) => ({ x: sum.x + point.x, y: sum.y + point.y }), { x: 0, y: 0 });
-      const left = average(points.slice(36, 42));
-      left.x /= 6; left.y /= 6;
-      const right = average(points.slice(42, 48));
-      right.x /= 6; right.y /= 6;
+      const mean = (items) => {
+        const total = items.reduce((sum, point) => ({ x: sum.x + point.x, y: sum.y + point.y }), { x: 0, y: 0 });
+        return { x: total.x / items.length, y: total.y / items.length };
+      };
+      const left = mean(points.slice(36, 42));
+      const right = mean(points.slice(42, 48));
       const nose = points[30];
       const eyeDistance = Math.hypot(right.x - left.x, right.y - left.y) || 1;
       return { yaw: (nose.x - (left.x + right.x) / 2) / eyeDistance, pitch: (nose.y - (left.y + right.y) / 2) / eyeDistance };
-    }
-    function poseHeld(name, pose, baseline) {
-      if (name === "center") return Math.abs(pose.yaw) < 0.12;
-      if (name === "left") return Math.abs(pose.yaw) > 0.18;
-      if (name === "right") return sideSign !== 0 && pose.yaw * sideSign < -0.18;
-      if (name === "up") return pose.pitch < baseline - 0.08;
-      if (name === "down") return pose.pitch > baseline + 0.08;
-      return false;
     }
   </script>`;
 }
