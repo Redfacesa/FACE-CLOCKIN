@@ -9,24 +9,27 @@ export function kioskPage(code) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Clock in</title>
   <style>
-    :root { color-scheme: dark; --red:#9f1d2d; --muted:#a3a3a3; }
+    :root { color-scheme: dark; --red:#9f1d2d; --muted:#b7b1ab; --line:rgba(255,255,255,.1); }
     * { box-sizing: border-box; }
-    body { margin:0; min-height:100vh; background:#101010; color:#f5f5f5; font-family:"Avenir Next","Segoe UI",sans-serif; }
-    main { max-width:720px; margin:0 auto; padding:36px 22px 48px; }
+    body { margin:0; min-height:100vh; color:#f6f4f2; font-family:"Avenir Next","Segoe UI",sans-serif; background:radial-gradient(900px 420px at 50% -10%, rgba(159,29,45,.35), transparent 60%), #0c0c0e; }
+    main { max-width:880px; margin:0 auto; padding:48px 24px 64px; }
     .mark { letter-spacing:.22em; font-size:13px; margin:0; }
     .sub { letter-spacing:.28em; color:var(--red); font-size:12px; }
-    h1 { font-size:clamp(48px, 8vw, 84px); line-height:.9; margin:18px 0 0; font-weight:560; letter-spacing:-.04em; }
+    h1 { font-size:clamp(40px, 7vw, 72px); line-height:.92; margin:18px 0 0; font-weight:560; letter-spacing:-.045em; }
     .time { font-size:clamp(56px, 10vw, 96px); margin:12px 0; letter-spacing:-.05em; }
     .muted { color:var(--muted); }
-    .actions { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:28px; }
-    .people { display:grid; gap:8px; } .people button span { color:#a3a3a3; }
-    button { font:inherit; color:inherit; background:#1c1c1c; border:1px solid #2c2c2c; border-radius:18px; padding:22px; text-align:left; }
-    button strong { display:block; font-size:22px; }
+    .actions { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:32px; }
+    .people { display:grid; gap:10px; } .people button span { color:var(--muted); }
+    button { font:inherit; color:inherit; background:rgba(255,255,255,.04); border:1px solid var(--line); border-radius:22px; padding:22px; text-align:left; backdrop-filter:blur(16px); }
+    button strong { display:block; font-size:22px; margin-bottom:4px; }
     button.primary { background:var(--red); border-color:transparent; }
-    .panel { margin-top:18px; } .hidden { display:none; }
-    .foot { margin-top:36px; color:var(--muted); letter-spacing:.08em; font-size:13px; }
-    input { width:100%; font:inherit; padding:12px; border-radius:12px; border:1px solid #2c2c2c; background:#111; color:white; }
+    .panel { margin-top:22px; } .hidden { display:none; }
+    #face-panel { margin-top:8px; }
+    #face-back { margin-top:16px; width:auto; }
+    .foot { margin-top:40px; color:var(--muted); letter-spacing:.08em; font-size:13px; }
+    input { width:100%; font:inherit; padding:14px; border-radius:14px; border:1px solid var(--line); background:rgba(0,0,0,.35); color:white; }
     .error { color:#f0c2c6; }
+    @media (max-width:700px) { main { padding:28px 16px 48px; } .actions { grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
@@ -49,8 +52,8 @@ export function kioskPage(code) {
     </section>
     <section id="flow" class="panel hidden"></section>
     <section id="face-panel" class="panel hidden">${faceCapture({
-      heading: "Face",
-      detail: "Blink once. The station matches the live face to a registered employee, then asks you to confirm.",
+      heading: "Scan your face",
+      detail: "Look at the camera. Your face stays on screen while the landmarks follow your eyes, nose, mouth and jaw.",
       mode: "identify",
       postUrl: "/api/identify",
     })}<p><button id="face-back" type="button">Back</button></p></section>

@@ -177,12 +177,12 @@ export function employeePage({ user, employee, credentials = [], history = [], f
       ${faceReady ? `<form method="post" action="/app/employees/${employee.id}/face/delete"><button class="button quiet" type="submit">Delete facial template</button></form>` : ""}
     </section>
     ${faceCapture({
-      heading: "Register face",
-      detail: "Use the front camera. The employee blinks, then looks ahead, left, right, up and down. Frames are captured automatically and stored as a template, not as an uploaded photograph.",
+      heading: "Register employee face",
+      detail: "Position your face inside the scanning area. Keep looking at the camera. The wireframe follows the live landmarks and the picture stays visible.",
       mode: "enroll",
       postUrl: `/app/employees/${employee.id}/face`,
     })}
-    ${can(user.role, "settings") ? `<section class="card"><h2>Pay</h2><form method="post" action="/app/employees/${employee.id}/pay"><label>Pay<select name="payType"><option value="monthly">Monthly salary</option><option value="hourly">Hourly rate</option></select></label><label>Amount in rands<input name="amount" inputmode="decimal" required></label><button class="button quiet" type="submit">Save pay</button></form></section>` : ""}
+    ${can(user.role, "settings") ? `<section class="card"><p class="eyebrow">Employment details</p><h2>Payment</h2><p class="muted">Salary sits with the employee record. It is separate from face registration.</p><form method="post" action="/app/employees/${employee.id}/pay"><label>Pay<select name="payType"><option value="monthly">Monthly salary</option><option value="hourly">Hourly rate</option></select></label><label>Amount in rands<input name="amount" inputmode="decimal" required></label><button class="button quiet" type="submit">Save pay</button></form></section>` : ""}
     <section class="card"><h2>Attendance</h2>
       <table>${history.map((event) => `<tr><td>${escapeHtml(event.work_date)}</td><td>${escapeHtml(event.timeLabel)}</td><td>${escapeHtml(event.event_type === "CLOCK_IN" ? "In" : "Out")}</td><td>${escapeHtml(event.method)}</td></tr>`).join("") || "<tr><td>No attendance yet.</td></tr>"}</table>
     </section>
@@ -342,26 +342,26 @@ function app(user, title, body) {
 
 function shell(title, body) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)}</title><style>
-    :root { color-scheme: dark; --bg:#141414; --panel:#1c1c1c; --ink:#f5f5f5; --muted:#a3a3a3; --line:#2c2c2c; --red:#9f1d2d; }
-    * { box-sizing: border-box; } body { margin:0; background:var(--bg); color:var(--ink); font-family: "Avenir Next", "Segoe UI", sans-serif; }
-    a { color: white; } .mark { letter-spacing:.22em; font-size:13px; margin:0; } .sub { letter-spacing:.28em; color:var(--red); font-size:12px; margin:4px 0 16px; }
-    .app { display:grid; grid-template-columns:240px 1fr; min-height:100vh; } aside { background:#101010; border-right:1px solid var(--line); padding:24px 18px; }
-    aside a { display:block; color:var(--muted); text-decoration:none; padding:8px 0; } aside a:hover { color:white; } main { padding:32px; }
-    h1 { font-weight:560; letter-spacing:-.03em; margin:0; } h2 { font-weight:560; } .muted, .eyebrow { color:var(--muted); } .eyebrow { text-transform:uppercase; letter-spacing:.14em; font-size:12px; }
-    .head { display:flex; justify-content:space-between; gap:16px; align-items:end; margin-bottom:22px; }
-    .stats { display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:12px; } .stat, .card { background:var(--panel); border:1px solid var(--line); border-radius:16px; }
-    .stat { padding:16px; } .stat span { color:var(--muted); font-size:13px; } .stat strong { display:block; font-size:34px; margin-top:8px; }
-    .split, .stations { display:grid; grid-template-columns:1.2fr .8fr; gap:12px; margin-top:12px; } .stations { grid-template-columns:1fr 1fr; }
-    .card { padding:16px; margin-top:12px; } table { width:100%; border-collapse:collapse; } th, td { text-align:left; padding:10px 8px; border-bottom:1px solid var(--line); }
-    .bars { display:flex; align-items:end; gap:8px; height:120px; } .bars div { flex:1; display:flex; flex-direction:column; justify-content:end; align-items:center; height:100%; } .bars span { display:block; width:100%; background:var(--red); border-radius:6px 6px 0 0; min-height:4px; }
-    form { display:grid; gap:10px; max-width:460px; margin-top:16px; } label, .check { display:grid; gap:6px; } input, select { background:#111; color:white; border:1px solid var(--line); border-radius:10px; padding:10px 12px; font:inherit; }
-    .button, button.button { background:var(--red); color:white; border:0; border-radius:999px; padding:11px 16px; font:inherit; text-decoration:none; display:inline-block; }
-    .quiet { background:transparent; border:1px solid var(--line); } button.text { background:none; border:0; color:var(--muted); padding:12px 0; font:inherit; }
-    .gate { max-width:520px; margin:0 auto; padding:64px 20px; } .lead { color:var(--muted); } .error { color:#f0c2c6; } .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    :root { color-scheme: dark; --bg:#0c0c0e; --panel:rgba(255,255,255,.045); --ink:#f6f4f2; --muted:#b7b1ab; --line:rgba(255,255,255,.1); --red:#9f1d2d; --good:#3ddc84; }
+    * { box-sizing: border-box; } body { margin:0; color:var(--ink); font-family: "Avenir Next", "Segoe UI", sans-serif; line-height:1.45; background:radial-gradient(1100px 480px at 0% -10%, rgba(159,29,45,.32), transparent 55%), var(--bg); }
+    a { color: white; } .mark { letter-spacing:.22em; font-size:13px; margin:0; } .sub { letter-spacing:.28em; color:var(--red); font-size:12px; margin:4px 0 18px; }
+    .app { display:grid; grid-template-columns:250px 1fr; min-height:100vh; } aside { background:rgba(255,255,255,.03); border-right:1px solid var(--line); padding:28px 22px; backdrop-filter:blur(18px); }
+    aside a { display:block; color:var(--muted); text-decoration:none; padding:9px 0; } aside a:hover { color:white; } main { padding:40px 36px 72px; }
+    h1 { font-weight:560; letter-spacing:-.04em; margin:0; font-size:clamp(32px, 4vw, 48px); } h2 { font-weight:560; letter-spacing:-.03em; margin:0 0 8px; } .muted, .eyebrow { color:var(--muted); } .eyebrow { text-transform:uppercase; letter-spacing:.16em; font-size:12px; margin:0 0 8px; }
+    .head { display:flex; justify-content:space-between; gap:18px; align-items:end; margin-bottom:28px; }
+    .stats { display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:14px; } .stat, .card { background:var(--panel); border:1px solid var(--line); border-radius:22px; backdrop-filter:blur(18px); box-shadow:0 16px 40px rgba(0,0,0,.22); }
+    .stat { padding:18px 18px 16px; } .stat span { color:var(--muted); font-size:13px; } .stat strong { display:block; font-size:34px; margin-top:10px; letter-spacing:-.04em; }
+    .split, .stations { display:grid; grid-template-columns:1.2fr .8fr; gap:16px; margin-top:16px; } .stations { grid-template-columns:1fr 1fr; }
+    .card { padding:28px; margin-top:16px; } table { width:100%; border-collapse:collapse; } th, td { text-align:left; padding:12px 8px; border-bottom:1px solid var(--line); }
+    .bars { display:flex; align-items:end; gap:8px; height:140px; } .bars div { flex:1; display:flex; flex-direction:column; justify-content:end; align-items:center; height:100%; } .bars span { display:block; width:100%; background:var(--red); border-radius:8px 8px 0 0; min-height:4px; }
+    form { display:grid; gap:12px; max-width:480px; margin-top:18px; } label, .check { display:grid; gap:6px; } input, select { background:rgba(0,0,0,.35); color:white; border:1px solid var(--line); border-radius:12px; padding:12px 14px; font:inherit; }
+    .button, button.button { background:var(--red); color:white; border:0; border-radius:999px; padding:12px 18px; font:inherit; text-decoration:none; display:inline-block; }
+    .quiet { background:transparent; border:1px solid var(--line); } button.text { background:none; border:0; color:var(--muted); padding:16px 0; font:inherit; }
+    .gate { max-width:560px; margin:0 auto; padding:72px 22px; } .lead { color:var(--muted); } .error { color:#f0c2c6; } .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
     .plans { display:grid; gap:8px; } .choice { display:flex; gap:10px; align-items:center; } .mono { font-family: ui-monospace, monospace; word-break:break-all; }
-    .preview { width:100%; height:640px; border:1px solid var(--line); border-radius:18px; background:#0d0d0d; }
-    fieldset { border:1px solid var(--line); border-radius:12px; } .legal { color:var(--muted); font-size:12px; padding:8px 24px 24px; }
-    @media (max-width:900px) { .app, .stats, .split, .stations { grid-template-columns:1fr; } }
+    .preview { width:100%; height:640px; border:1px solid var(--line); border-radius:22px; background:#0d0d0d; }
+    fieldset { border:1px solid var(--line); border-radius:16px; padding:16px; } .legal { color:var(--muted); font-size:12px; padding:8px 28px 28px; }
+    @media (max-width:900px) { .app, .stats, .split, .stations { grid-template-columns:1fr; } main { padding:24px 16px 56px; } .card { padding:20px; } aside { border-right:0; border-bottom:1px solid var(--line); } }
   </style></head><body>${body}<p class="legal">© Red Face (Pty) Ltd. Licensed software.</p></body></html>`;
 }
 
