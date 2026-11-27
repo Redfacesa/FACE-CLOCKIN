@@ -67,7 +67,7 @@ export function faceCapture({ heading, detail, mode, postUrl }) {
     const enroll = ${enroll ? "true" : "false"};
     const steps = ${JSON.stringify(steps.map(([id]) => id))};
     const prompts = {
-      blink: enroll ? "Blink once, then keep looking at the camera." : "Look straight at the camera and blink once.",
+      blink: enroll ? "Blink once, then keep looking at the camera." : "Look straight at the camera and hold still.",
       center: "Look forward and hold still.",
       left: "Turn your head to your left and hold.",
       right: "Turn your head to your right and hold.",
@@ -136,11 +136,11 @@ export function faceCapture({ heading, detail, mode, postUrl }) {
                 drawWire(null);
                 setTone("attention", "Face positioning");
                 state.textContent = "Reposition your face. " + prompts[steps[step]];
-              } else if (dim < 42) {
+              } else if (dim < 12) {
                 held = 0;
                 drawWire(found, "#ff5a5a");
                 setTone("attention", "Face positioning");
-                state.textContent = "Improve the lighting, then look at the camera.";
+                state.textContent = "The picture is too dark. Face a light, then look at the camera.";
               } else {
                 const points = found.landmarks.positions;
                 const pose = headPose(points);
@@ -149,7 +149,7 @@ export function faceCapture({ heading, detail, mode, postUrl }) {
                 if (ear < openLevel * 0.75) sawBlink = true;
                 else openLevel = openLevel * 0.85 + ear * 0.15;
                 const name = steps[step];
-                const ready = name === "blink" ? sawBlink && ear > openLevel * 0.9 : poseReady(name, pose);
+                const ready = !enroll ? Math.abs(pose.yaw) < 0.35 : name === "blink" ? sawBlink && ear > openLevel * 0.9 : poseReady(name, pose);
                 held = ready ? held + 1 : 0;
                 drawWire(found, ready ? "#3ddc84" : "#ff5a5a");
                 setTone(ready ? "aligned" : "attention", ready ? "Face aligned" : "Face positioning");
@@ -165,13 +165,14 @@ export function faceCapture({ heading, detail, mode, postUrl }) {
         async function take(found, manual) {
           if (!running || taking || Date.now() < flashUntil) return;
           const name = steps[step];
-          if (name === "blink" && !manual && !sawBlink) return;
+          if (enroll && name === "blink" && !manual && !sawBlink) return;
           taking = true;
           let descriptor = null;
           try {
             if (!(enroll && name === "blink")) {
-              const raw = found.descriptor ?? await faceapi.computeFaceDescriptor(video, found.landmarks);
-              if (!raw) throw new Error("Hold still. The face could not be read.");
+              const full = await faceapi.detectSingleFace(video, options).withFaceLandmarks().withFaceDescriptor();
+              const raw = full?.descriptor;
+              if (!raw || raw.length !== 128) throw new Error("Hold still. The face could not be read.");
               descriptor = Array.from(raw);
             }
           } catch (error) {

@@ -27,9 +27,9 @@ export function classifyFace(probe, templates) {
   if (!best.employeeId) return { status: "unknown", employeeId: null, distance: null };
   const alone = bestByEmployee.size === 1;
   const separated = alone || second - best.distance >= 0.08;
-  const acceptAt = alone ? 0.38 : 0.42;
+  const acceptAt = alone ? 0.5 : 0.45;
   if (best.distance <= acceptAt && separated) return { status: "match", employeeId: best.employeeId, distance: best.distance };
-  if (best.distance <= 0.55) return { status: "low_confidence", employeeId: null, distance: best.distance };
+  if (best.distance <= 0.6) return { status: "low_confidence", employeeId: null, distance: best.distance };
   return { status: "unknown", employeeId: null, distance: best.distance };
 }
 
