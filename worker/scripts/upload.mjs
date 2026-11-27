@@ -7,7 +7,7 @@ if (!token || !account) {
   process.exit(1);
 }
 
-const files = ["src/index.js", "src/clock.js", "src/crypto.js", "src/db.js", "src/page.js", "src/auth.js", "src/platform.js", "src/manage.js", "src/mail.js", "src/faceui.js", "src/payroll.js", "vendor/uqr.mjs"];
+const files = ["src/index.js", "src/clock.js", "src/crypto.js", "src/db.js", "src/page.js", "src/auth.js", "src/platform.js", "src/manage.js", "src/mail.js", "src/faceui.js", "src/payroll.js", "src/site.js", "vendor/uqr.mjs"];
 const secretFile = readFileSync(new URL("../.dev.vars", import.meta.url), "utf8");
 const sessionSecret = secretFile.match(/^SESSION_SECRET=(.*)$/m)?.[1];
 const smtpPassword = secretFile.match(/^SMTP_PASSWORD=(.*)$/m)?.[1];
@@ -24,6 +24,7 @@ const metadata = {
     { type: "secret_text", name: "SESSION_SECRET", text: sessionSecret },
     { type: "secret_text", name: "SMTP_USER", text: "info@redface.co.za" },
     { type: "secret_text", name: "SMTP_PASSWORD", text: smtpPassword },
+    { type: "plain_text", name: "PLATFORM_ADMINS", text: "info@redface.co.za" },
   ],
 };
 

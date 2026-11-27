@@ -6,6 +6,7 @@ import { httpError } from "./db.js";
 
 export const INDUSTRIES = ["Restaurant", "Hotel", "Construction", "Retail", "Security", "Factory", "Office", "Cleaning", "Other"];
 export const PLANS = {
+  free: { label: "Free", limit: 5 },
   starter: { label: "Starter", limit: 25 },
   growth: { label: "Growth", limit: 100 },
   business: { label: "Business", limit: 500 },
@@ -18,11 +19,12 @@ export async function currentUser(db, session) {
   return db
     .prepare(
       `SELECT company_users.id, company_users.company_id, company_users.full_name, company_users.role, company_users.email,
-              companies.name AS company_name, companies.timezone, companies.default_start, companies.address, companies.contact_phone
+              companies.name AS company_name, companies.timezone, companies.default_start, companies.address, companies.contact_phone,
+              companies.status AS company_status, companies.review_note, companies.business_type
        FROM company_users
        JOIN companies ON companies.id = company_users.company_id
        WHERE company_users.id = ? AND company_users.company_id = ?
-         AND company_users.status = 'active' AND companies.status = 'active'`,
+         AND company_users.status = 'active' AND companies.status != 'rejected'`,
     )
     .bind(session.uid, session.companyId)
     .first();
@@ -39,7 +41,11 @@ export async function registerCompany(db, input) {
   const taken = await db.prepare("SELECT id FROM company_users WHERE email = ?").bind(email).first();
   if (taken) throw httpError("That email is already registered.", 409, "email_taken");
 
-  const plan = PLANS[input.plan] ? input.plan : "starter";
+  const businessType = input.businessType === "sole" ? "sole" : "cipc";
+  const registrationNumber = blank(input.registrationNumber);
+  if (businessType === "cipc" && !registrationNumber) throw httpError("Enter the CIPC registration number, or choose sole proprietor.", 400, "registration_required");
+  if (input.terms !== "on") throw httpError("Accept the terms before submitting the business.", 400, "terms_required");
+  const plan = input.plan === "business" ? "growth" : "free";
   const companyId = crypto.randomUUID();
   const userId = crypto.randomUUID();
   const stationId = crypto.randomUUID();
@@ -50,17 +56,21 @@ export async function registerCompany(db, input) {
   await db.batch([
     db.prepare(
       `INSERT INTO companies
-       (id, name, registration_number, industry, address, contact_email, contact_phone, timezone, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+       (id, name, trading_name, business_type, registration_number, industry, address, contact_email, contact_phone, timezone, status, employee_estimate, owner_id_number, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
     ).bind(
       companyId,
       companyName,
-      blank(input.registrationNumber),
+      blank(input.tradingName),
+      businessType,
+      registrationNumber,
       industry,
       blank(input.address),
       email,
       blank(input.phone),
       timezone,
+      Number(input.employeeEstimate) || null,
+      blank(input.ownerId),
       now,
     ),
     db.prepare("INSERT INTO businesses (id, name, timezone) VALUES (?, ?, ?)").bind(companyId, companyName, timezone),
@@ -95,7 +105,7 @@ export async function authenticate(db, email, password) {
     throw httpError("That email or password is not correct.", 401, "login_rejected");
   }
   if (!user.email_verified_at) throw httpError("Confirm the email we sent before signing in.", 403, "email_unverified");
-  if (!user.activated_at || user.company_status !== "active") throw httpError("Activate the workspace before signing in. Verification and activation are separate.", 403, "not_activated");
+  if (user.company_status === "rejected") throw httpError("This business application was not approved. Check the email we used for the review.", 403, "application_rejected");
   return { uid: user.id, companyId: user.company_id, role: user.role, name: user.full_name };
 }
 
@@ -694,6 +704,69 @@ async function ensureNamed(db, table, companyId, name) {
   const id = crypto.randomUUID();
   await db.prepare(`INSERT INTO ${table} (id, company_id, name) VALUES (?, ?, ?)`).bind(id, companyId, clean).run();
   return id;
+}
+
+const DOCUMENT_TYPES = new Set(["application/pdf", "image/jpeg", "image/png"]);
+
+export async function saveBusinessDocument(db, bucket, companyId, kind, file) {
+  if (!file || typeof file === "string" || !file.size) return null;
+  if (file.size > 8_000_000) throw httpError("Each document must be under 8 MB.", 400, "file_large");
+  if (!DOCUMENT_TYPES.has(file.type)) throw httpError("Upload a PDF, JPG, or PNG.", 400, "file_type");
+  const id = crypto.randomUUID();
+  const key = `companies/${companyId}/verification/${id}`;
+  await bucket.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: file.type } });
+  const now = new Date().toISOString();
+  await db.prepare(
+    "INSERT INTO business_documents (id, company_id, kind, object_key, filename, content_type, uploaded_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  ).bind(id, companyId, kind, key, String(file.name || "document").slice(0, 180), file.type, now).run();
+  return id;
+}
+
+export async function listBusinessDocuments(db, companyId) {
+  const rows = await db.prepare(
+    "SELECT id, kind, filename, content_type, uploaded_at FROM business_documents WHERE company_id = ? ORDER BY uploaded_at",
+  ).bind(companyId).all();
+  return rows.results ?? [];
+}
+
+export async function businessDocument(db, id) {
+  return db.prepare("SELECT id, company_id, object_key, filename, content_type FROM business_documents WHERE id = ?").bind(id).first();
+}
+
+export async function listApplications(db) {
+  const rows = await db.prepare(
+    `SELECT companies.id, companies.name, companies.trading_name, companies.business_type, companies.registration_number,
+            companies.industry, companies.address, companies.contact_email, companies.contact_phone, companies.status,
+            companies.review_note, companies.employee_estimate, companies.owner_id_number, companies.created_at,
+            company_users.full_name, company_users.email, company_users.email_verified_at
+     FROM companies
+     JOIN company_users ON company_users.company_id = companies.id AND company_users.role = 'owner'
+     ORDER BY companies.created_at DESC`,
+  ).all();
+  return rows.results ?? [];
+}
+
+export async function reviewCompany(db, companyId, action, actorEmail, note) {
+  const company = await db.prepare("SELECT id, status FROM companies WHERE id = ?").bind(companyId).first();
+  if (!company) throw httpError("That business was not found.", 404, "company_missing");
+  const allowed = { approve: "active", reject: "rejected", request: "needs_documents", suspend: "suspended", reactivate: "active" };
+  const status = allowed[action];
+  if (!status) throw httpError("Choose a review action.", 400, "review_action");
+  if (action === "approve" || action === "reactivate") {
+    const owner = await db.prepare("SELECT email_verified_at FROM company_users WHERE company_id = ? AND role = 'owner'").bind(companyId).first();
+    if (!owner?.email_verified_at) throw httpError("The owner must verify their email before the workspace opens.", 409, "email_unverified");
+  }
+  const now = new Date().toISOString();
+  const statements = [
+    db.prepare("UPDATE companies SET status = ?, review_note = ? WHERE id = ?").bind(status, blank(note), companyId),
+    db.prepare(
+      "INSERT INTO verification_events (id, company_id, actor_email, action, note, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+    ).bind(crypto.randomUUID(), companyId, actorEmail, action, blank(note), now),
+  ];
+  if (status === "active") {
+    statements.push(db.prepare("UPDATE company_users SET activated_at = COALESCE(activated_at, ?) WHERE company_id = ? AND role = 'owner'").bind(now, companyId));
+  }
+  await db.batch(statements);
 }
 
 function cleanEmail(email) {

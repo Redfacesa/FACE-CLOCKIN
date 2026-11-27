@@ -71,7 +71,7 @@ export function pendingPage({ email, warning = "" }) {
     <main class="gate">
       <p class="mark">REDFACE</p>
       <h1>Check your email</h1>
-      <p class="lead">We sent a verification link to ${escapeHtml(email)}. Open it to verify the address. The workspace stays inactive until you activate it on the next screen.</p>
+      <p class="lead">We sent a verification link to ${escapeHtml(email)}. Confirm the address, then sign in. You will see the application status. Employee clocking stays off until Try Clock In approves the business.</p>
       ${warning ? `<p class="error">${escapeHtml(warning)}</p>` : ""}
       <form method="post" action="/signup/resend"><input type="hidden" name="email" value="${escapeHtml(email)}"><button class="button quiet" type="submit">Send the email again</button></form>
     </main>`);
@@ -82,10 +82,9 @@ export function verifyPage({ companyName, token, verified = false, error = "" })
     <main class="gate">
       <p class="mark">REDFACE</p>
       <h1>${verified ? "Email verified" : "Verify email"}</h1>
-      <p class="lead">${escapeHtml(companyName)} can be activated after this address is verified. Activation is a separate step and does not happen when the email is sent.</p>
+      <p class="lead">${verified ? `${escapeHtml(companyName)} email is confirmed. Sign in to see the application. Clocking opens only after Try Clock In approves the business.` : `Confirm this address for ${escapeHtml(companyName)}. Approval is a separate review.`}</p>
       ${error ? `<p class="error">${escapeHtml(error)}</p>` : ""}
-      ${verified ? `<form method="post" action="/verify/${encodeURIComponent(token)}"><button class="button" type="submit">Activate workspace</button></form>` : `<p><a class="button" href="/verify/${encodeURIComponent(token)}">Verify email</a></p>`}
-      <p class="muted">Sign-in stays closed until the workspace is active.</p>
+      ${verified ? `<p><a class="button" href="/login">Business login</a></p>` : `<p><a class="button" href="/verify/${encodeURIComponent(token)}">Verify email</a></p>`}
     </main>`);
 }
 

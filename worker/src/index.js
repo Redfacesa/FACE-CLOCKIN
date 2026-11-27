@@ -1,3 +1,4 @@
+import { holdPage, landingPage, reviewPage, signupPage } from "./site.js";
 import { renderSVG } from "../vendor/uqr.mjs";
 import { can, clearCookie, readSession, sessionCookie, signSession } from "./auth.js";
 import { METHODS, zonedNow, publicEmployee } from "./clock.js";
@@ -20,8 +21,6 @@ import {
   employeePage,
   employeesPage,
   facePage,
-  activatedPage,
-  homePage,
   leavePage,
   loginPage,
   overviewPage,
@@ -29,7 +28,6 @@ import {
   reportsPage,
   settingsPage,
   shiftsPage,
-  signupPage,
   stationPreview,
   stationsPage,
   verifyPage,
@@ -46,7 +44,7 @@ import {
   createLeave,
   createStation,
   currentUser,
-  activateWorkspace,
+  businessDocument,
   deleteFace,
   finalisePayroll,
   hasFeature,
@@ -63,10 +61,14 @@ import {
   listLeave,
   markEmailVerified,
   pendingOwner,
+  listApplications,
+  listBusinessDocuments,
   listStations,
   listTeam,
   recordConsent,
   registerCompany,
+  reviewCompany,
+  saveBusinessDocument,
   revokeCredential,
   saveCompany,
   saveDocument,
@@ -99,7 +101,8 @@ export default {
 };
 
 async function route(request, env, url) {
-  if (url.pathname === "/") return html(homePage(), 200, "public, max-age=300");
+  if (url.pathname === "/") return html(landingPage(), 200, "public, max-age=300");
+  if (url.pathname === "/admin" || url.pathname.startsWith("/admin/")) return platformReview(request, env, url);
   if (url.pathname === "/signup") return signup(request, env, url);
   if (url.pathname === "/signup/resend" && request.method === "POST") return resendVerification(request, env, url);
   if (url.pathname.startsWith("/verify/")) return verifyEmail(request, env, url);
@@ -127,12 +130,21 @@ async function route(request, env, url) {
   return json({ error: "Not found." }, 404);
 }
 
+function hasFile(file) {
+  return file && typeof file !== "string" && file.size > 0;
+}
+
 async function signup(request, env, url) {
   if (request.method !== "POST") return html(signupPage());
   const form = await request.formData();
-  const values = Object.fromEntries(form);
+  const values = Object.fromEntries([...form].filter(([, value]) => typeof value === "string"));
   try {
+    if (!hasFile(form.get("registration"))) throw httpError("Upload the business document.", 400, "file_missing");
     const account = await registerCompany(env.DB, values);
+    const kind = values.businessType === "sole" ? "sole-proof" : "cipc";
+    await saveBusinessDocument(env.DB, env.FILES, account.companyId, kind, form.get("registration"));
+    if (hasFile(form.get("addressProof"))) await saveBusinessDocument(env.DB, env.FILES, account.companyId, "address", form.get("addressProof"));
+    if (hasFile(form.get("authority"))) await saveBusinessDocument(env.DB, env.FILES, account.companyId, "authority", form.get("authority"));
     const token = await issueVerification(env.DB, account.uid, account.companyId);
     const link = `${url.origin}/verify/${token}`;
     try {
@@ -165,16 +177,59 @@ async function resendVerification(request, env, url) {
 async function verifyEmail(request, env, url) {
   const token = decodeURIComponent(url.pathname.slice("/verify/".length));
   try {
-    if (request.method === "POST") {
-      await activateWorkspace(env.DB, token);
-      return html(activatedPage());
-    }
     const row = await markEmailVerified(env.DB, token);
     return html(verifyPage({ companyName: row.company_name, token, verified: true }));
   } catch (error) {
     if (!error.status) throw error;
     return html(verifyPage({ companyName: "This workspace", token, error: error.message }), error.status);
   }
+}
+
+function isPlatformAdmin(env, email) {
+  const configured = String(env.PLATFORM_ADMINS || "info@redface.co.za");
+  return configured.split(",").map((item) => item.trim().toLowerCase()).filter(Boolean).includes(String(email || "").toLowerCase());
+}
+
+async function documentsFor(env, applications) {
+  const documentsByCompany = {};
+  for (const item of applications) {
+    if (item.status === "active") continue;
+    documentsByCompany[item.id] = await listBusinessDocuments(env.DB, item.id);
+  }
+  return documentsByCompany;
+}
+
+async function platformReview(request, env, url) {
+  const user = await currentUser(env.DB, await readSession(request, env.SESSION_SECRET));
+  if (!user) return redirect("/login");
+  if (!isPlatformAdmin(env, user.email)) return new Response("Not found.", { status: 404 });
+  const documentMatch = url.pathname.match(/^\/admin\/documents\/([^/]+)$/);
+  if (documentMatch) {
+    const document = await businessDocument(env.DB, documentMatch[1]);
+    if (!document) return new Response("Not found.", { status: 404 });
+    const object = await env.FILES.get(document.object_key);
+    if (!object) return new Response("Not found.", { status: 404 });
+    return new Response(object.body, {
+      headers: {
+        "content-type": document.content_type,
+        "content-disposition": `attachment; filename="${String(document.filename).replaceAll('"', "")}"`,
+        "cache-control": "private, no-store",
+      },
+    });
+  }
+  const reviewMatch = url.pathname.match(/^\/admin\/companies\/([^/]+)$/);
+  if (reviewMatch && request.method === "POST") {
+    const form = await request.formData();
+    try {
+      await reviewCompany(env.DB, reviewMatch[1], String(form.get("action") ?? ""), user.email, form.get("note"));
+      return redirect("/admin");
+    } catch (error) {
+      const applications = await listApplications(env.DB);
+      return html(reviewPage({ applications, documentsByCompany: await documentsFor(env, applications), error: error.message || "The review could not be saved." }), error.status || 400);
+    }
+  }
+  const applications = await listApplications(env.DB);
+  return html(reviewPage({ applications, documentsByCompany: await documentsFor(env, applications) }));
 }
 
 async function login(request, env) {
@@ -193,6 +248,13 @@ async function dashboard(request, env, url) {
   const user = await currentUser(env.DB, await readSession(request, env.SESSION_SECRET));
   if (!user) return redirect("/login");
   const path = url.pathname;
+  if (user.company_status !== "active") {
+    if (path === "/app/verification-documents" && request.method === "POST") {
+      await saveBusinessDocument(env.DB, env.FILES, user.company_id, "extra", (await request.formData()).get("extra"));
+      return redirect("/app");
+    }
+    return html(holdPage({ user, documents: await listBusinessDocuments(env.DB, user.company_id) }));
+  }
 
   const local = zonedNow(new Date(), user.timezone);
   const guard = (action) => {

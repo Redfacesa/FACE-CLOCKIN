@@ -1,0 +1,27 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+		A10000000000000000000001 /* TryClockInApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TryClockInApp.swift; sourceTree = "<group>"; };
+		A10000000000000000000002 /* StationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StationView.swift; sourceTree = "<group>"; };
+		A10000000000000000000003 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A10000000000000000000004 /* TryClockIn.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TryClockIn.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000010 /* TryClockIn */ = {isa = PBXGroup; children = (A10000000000000000000001, A10000000000000000000002, A10000000000000000000003); path = TryClockIn; sourceTree = "<group>"; };
+		A10000000000000000000011 /* Products */ = {isa = PBXGroup; children = (A10000000000000000000004); name = Products; sourceTree = "<group>"; };
+		A10000000000000000000012 /* root */ = {isa = PBXGroup; children = (A10000000000000000000010, A10000000000000000000011); sourceTree = "<group>"; };
+		A10000000000000000000020 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000021, A10000000000000000000022); runOnlyForDeploymentPostprocessing = 0; };
+		A10000000000000000000021 /* TryClockInApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000001; };
+		A10000000000000000000022 /* StationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000002; };
+		A10000000000000000000030 /* TryClockIn */ = {isa = PBXNativeTarget; buildConfigurationList = A10000000000000000000041; buildPhases = (A10000000000000000000020); buildRules = (); dependencies = (); name = TryClockIn; productName = TryClockIn; productReference = A10000000000000000000004; productType = "com.apple.product-type.application"; };
+		A10000000000000000000031 /* Project */ = {isa = PBXProject; attributes = {LastUpgradeCheck = 2650; }; buildConfigurationList = A10000000000000000000040; compatibilityVersion = "Xcode 14.0"; developmentRegion = "en"; hasScannedForEncodings = 0; knownRegions = (en, Base); mainGroup = A10000000000000000000012; productRefGroup = A10000000000000000000011; projectDirPath = ""; projectRoot = ""; targets = (A10000000000000000000030); };
+		A10000000000000000000040 /* Project configs */ = {isa = XCConfigurationList; buildConfigurations = (A10000000000000000000042, A10000000000000000000043); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A10000000000000000000041 /* Target configs */ = {isa = XCConfigurationList; buildConfigurations = (A10000000000000000000044, A10000000000000000000045); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A10000000000000000000042 /* Debug project */ = {isa = XCBuildConfiguration; buildSettings = {ALWAYS_SEARCH_USER_PATHS = NO; SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 16.0; SWIFT_VERSION = 5.0; }; name = Debug; };
+		A10000000000000000000043 /* Release project */ = {isa = XCBuildConfiguration; buildSettings = {ALWAYS_SEARCH_USER_PATHS = NO; SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 16.0; SWIFT_VERSION = 5.0; }; name = Release; };
+		A10000000000000000000044 /* Debug target */ = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGNING_ALLOWED = NO; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = TryClockIn/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 16.0; PRODUCT_BUNDLE_IDENTIFIER = za.co.redface.tryclockin; PRODUCT_NAME = TryClockIn; SDKROOT = iphoneos; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Debug; };
+		A10000000000000000000045 /* Release target */ = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGNING_ALLOWED = NO; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = TryClockIn/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 16.0; PRODUCT_BUNDLE_IDENTIFIER = za.co.redface.tryclockin; PRODUCT_NAME = TryClockIn; SDKROOT = iphoneos; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Release; };
+	};
+	rootObject = A10000000000000000000031;
+}
