@@ -1,5 +1,6 @@
 import { can } from "./auth.js";
 import { minutesInZone, zonedNow } from "./clock.js";
+import { DEFAULT_POLICY, estimateMonth, monthDates } from "./payroll.js";
 import { hashSecret, lookupKey, randomToken, verifySecret } from "./crypto.js";
 import { httpError } from "./db.js";
 
@@ -72,8 +73,8 @@ export async function registerCompany(db, input) {
        VALUES (?, ?, ?, 'Station 01 – Main Entrance', 'online', ?, 'Main entrance', 'nfc,qr,pin,face')`,
     ).bind(stationId, companyId, companyId, code),
     db.prepare(
-      `INSERT INTO subscriptions (id, company_id, plan, status, started_at, employee_limit)
-       VALUES (?, ?, ?, 'active', ?, ?)`,
+      `INSERT INTO subscriptions (id, company_id, plan, status, started_at, employee_limit, features)
+       VALUES (?, ?, ?, 'active', ?, ?, 'reports,payroll')`,
     ).bind(subscriptionId, companyId, plan, now, PLANS[plan].limit),
   ]);
   return { uid: userId, companyId, role: "owner", name: ownerName, code };
@@ -213,7 +214,7 @@ export async function inviteUser(db, actor, input) {
 
 export async function subscriptionFor(db, companyId) {
   return db
-    .prepare("SELECT plan, status, started_at, employee_limit FROM subscriptions WHERE company_id = ? ORDER BY started_at DESC LIMIT 1")
+    .prepare("SELECT plan, status, started_at, employee_limit, features FROM subscriptions WHERE company_id = ? ORDER BY started_at DESC LIMIT 1")
     .bind(companyId)
     .first();
 }
@@ -276,22 +277,44 @@ export async function pendingOwner(db, email) {
   ).bind(cleanEmail(email)).first();
 }
 
-export async function saveFaceTemplate(db, companyId, employeeId, descriptor) {
+function descriptorOrThrow(descriptor) {
   if (!Array.isArray(descriptor) || descriptor.length !== 128 || descriptor.some((item) => typeof item !== "number" || !Number.isFinite(item))) {
-    throw httpError("The face scan was not usable. Blink again in good light.", 400, "face_invalid");
+    throw httpError("The face scan was not usable. Hold each angle until it is captured.", 400, "face_invalid");
   }
+  return descriptor;
+}
+
+export async function saveFaceTemplate(db, companyId, employeeId, samples) {
+  const requiredPoses = ["center", "left", "right", "up", "down"];
+  const captured = requiredPoses.map((pose) => {
+    const sample = Array.isArray(samples) ? samples.find((item) => item?.pose === pose) : null;
+    return { pose, descriptor: descriptorOrThrow(sample?.descriptor) };
+  });
   const employee = await employeeInCompany(db, companyId, employeeId);
   if (!employee) throw httpError("That employee is not in this company.", 404, "employee_missing");
   const now = new Date().toISOString();
-  await db.batch([
+  const statements = [
     db.prepare(
       `INSERT INTO consents (id, company_id, employee_id, purpose, notice_version, consented_at)
        VALUES (?, ?, ?, 'attendance-face', ?, ?)`,
     ).bind(crypto.randomUUID(), companyId, employeeId, NOTICE_VERSION, now),
     db.prepare("UPDATE face_templates SET status = 'replaced' WHERE company_id = ? AND employee_id = ? AND status = 'active'").bind(companyId, employeeId),
-    db.prepare(
+  ];
+  for (const sample of captured) {
+    statements.push(db.prepare(
       "INSERT INTO face_templates (id, company_id, employee_id, descriptor, status, created_at) VALUES (?, ?, ?, ?, 'active', ?)",
-    ).bind(crypto.randomUUID(), companyId, employeeId, JSON.stringify(descriptor), now),
+    ).bind(crypto.randomUUID(), companyId, employeeId, JSON.stringify(sample.descriptor), now));
+  }
+  await db.batch(statements);
+}
+
+export async function deleteFace(db, companyId, employeeId) {
+  const employee = await employeeInCompany(db, companyId, employeeId);
+  if (!employee) throw httpError("That employee is not in this company.", 404, "employee_missing");
+  const now = new Date().toISOString();
+  await db.batch([
+    db.prepare("UPDATE face_templates SET status = 'deleted' WHERE company_id = ? AND employee_id = ? AND status = 'active'").bind(companyId, employeeId),
+    db.prepare("UPDATE consents SET withdrawn_at = ? WHERE company_id = ? AND employee_id = ? AND purpose = 'attendance-face' AND withdrawn_at IS NULL").bind(now, companyId, employeeId),
   ]);
 }
 
@@ -326,6 +349,119 @@ export async function stationDirectory(db, code) {
       employeeNumber: row.employee_number,
     })),
   };
+}
+
+export function hasFeature(subscription, feature) {
+  return String(subscription?.features || "reports,payroll").split(",").map((item) => item.trim()).includes(feature);
+}
+
+export async function payPolicy(db, companyId) {
+  const row = await db.prepare("SELECT * FROM pay_policies WHERE company_id = ?").bind(companyId).first();
+  if (!row) return { ...DEFAULT_POLICY };
+  return {
+    workDays: String(row.work_days).split(",").map(Number),
+    dayStart: row.day_start,
+    dayEnd: row.day_end,
+    weeklyMinutes: row.weekly_minutes,
+    lunchAllowanceMinutes: row.lunch_allowance_minutes,
+    lateGraceMinutes: row.late_grace_minutes,
+    overtimeMultiplier: row.overtime_multiplier,
+    deductLate: Boolean(row.deduct_late),
+    deductExtraBreak: Boolean(row.deduct_extra_break),
+    deductAbsence: Boolean(row.deduct_absence),
+  };
+}
+
+export async function savePayPolicy(db, companyId, input) {
+  const days = [0, 1, 2, 3, 4, 5, 6].filter((day) => input[`day${day}`] === "on");
+  if (!days.length) throw httpError("Choose at least one working day.", 400, "days_missing");
+  const multiplier = Number(input.overtimeMultiplier);
+  if (!Number.isFinite(multiplier) || multiplier < 1 || multiplier > 3) throw httpError("Overtime multiplier must be between 1 and 3.", 400, "multiplier_invalid");
+  const weeklyHours = Number(input.weeklyHours);
+  if (!Number.isFinite(weeklyHours) || weeklyHours < 1 || weeklyHours > 60) throw httpError("Enter expected weekly hours.", 400, "hours_invalid");
+  await db.prepare(
+    `INSERT INTO pay_policies
+      (company_id, day_start, day_end, work_days, weekly_minutes, lunch_allowance_minutes, late_grace_minutes, overtime_multiplier, deduct_late, deduct_extra_break, deduct_absence)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(company_id) DO UPDATE SET
+      day_start = excluded.day_start, day_end = excluded.day_end, work_days = excluded.work_days, weekly_minutes = excluded.weekly_minutes,
+      lunch_allowance_minutes = excluded.lunch_allowance_minutes, late_grace_minutes = excluded.late_grace_minutes, overtime_multiplier = excluded.overtime_multiplier,
+      deduct_late = excluded.deduct_late, deduct_extra_break = excluded.deduct_extra_break, deduct_absence = excluded.deduct_absence`,
+  ).bind(
+    companyId,
+    required(input.dayStart, "Enter the start time."),
+    required(input.dayEnd, "Enter the end time."),
+    days.join(","),
+    Math.round(weeklyHours * 60),
+    Number(input.lunchAllowanceMinutes) || 0,
+    Number(input.lateGraceMinutes) || 0,
+    multiplier,
+    input.deductLate === "on" ? 1 : 0,
+    input.deductExtraBreak === "on" ? 1 : 0,
+    input.deductAbsence === "on" ? 1 : 0,
+  ).run();
+}
+
+export async function saveEmployeePay(db, companyId, employeeId, input) {
+  const employee = await employeeInCompany(db, companyId, employeeId);
+  if (!employee) throw httpError("That employee is not in this company.", 404, "employee_missing");
+  const payType = input.payType === "hourly" ? "hourly" : "monthly";
+  const amount = Math.round(Number(input.amount) * 100);
+  if (!Number.isFinite(amount) || amount < 0) throw httpError("Enter the salary or hourly rate in rands.", 400, "pay_invalid");
+  await db.prepare(
+    `INSERT INTO employee_pay (employee_id, company_id, pay_type, amount_cents) VALUES (?, ?, ?, ?)
+     ON CONFLICT(employee_id) DO UPDATE SET pay_type = excluded.pay_type, amount_cents = excluded.amount_cents, company_id = excluded.company_id`,
+  ).bind(employeeId, companyId, payType, amount).run();
+}
+
+export async function monthlyReport(db, companyId, month, timeZone) {
+  const locked = await db.prepare("SELECT snapshot FROM payroll_runs WHERE company_id = ? AND month = ? AND status = 'finalised'").bind(companyId, month).first();
+  if (locked) return { ...JSON.parse(locked.snapshot), status: "finalised" };
+  const dates = monthDates(month);
+  if (!dates.length) throw httpError("Choose a month.", 400, "month_invalid");
+  const [people, events, leave, pays] = await db.batch([
+    db.prepare("SELECT id, first_name, last_name, employee_number FROM employees WHERE company_id = ? AND status = 'active' ORDER BY first_name").bind(companyId),
+    db.prepare("SELECT employee_id, event_type, occurred_at, work_date FROM attendance_events WHERE company_id = ? AND work_date >= ? AND work_date <= ?").bind(companyId, dates[0], dates.at(-1)),
+    db.prepare("SELECT employee_id, starts_on, ends_on FROM leave_requests WHERE company_id = ? AND status = 'approved' AND ends_on >= ? AND starts_on <= ?").bind(companyId, dates[0], dates.at(-1)),
+    db.prepare("SELECT employee_id, pay_type, amount_cents FROM employee_pay WHERE company_id = ?").bind(companyId),
+  ]);
+  const policy = await payPolicy(db, companyId);
+  const payByEmployee = new Map((pays.results ?? []).map((row) => [row.employee_id, row]));
+  const eventsByEmployee = new Map();
+  for (const event of events.results ?? []) {
+    const list = eventsByEmployee.get(event.employee_id) ?? [];
+    list.push(event);
+    eventsByEmployee.set(event.employee_id, list);
+  }
+  const today = zonedNow(new Date(), timeZone).workDate;
+  const rows = (people.results ?? []).map((employee) => {
+    const away = new Set();
+    for (const item of leave.results ?? []) {
+      if (item.employee_id !== employee.id) continue;
+      for (const date of dates) if (date >= item.starts_on && date <= item.ends_on) away.add(date);
+    }
+    return estimateMonth({
+      employee,
+      dates,
+      events: eventsByEmployee.get(employee.id) ?? [],
+      leaveDates: away,
+      policy,
+      pay: payByEmployee.get(employee.id),
+      timeZone,
+      today,
+    });
+  });
+  return { month, status: "estimated", rows, policy };
+}
+
+export async function finalisePayroll(db, companyId, month, timeZone) {
+  const report = await monthlyReport(db, companyId, month, timeZone);
+  if (report.status === "finalised") return report;
+  const snapshot = { ...report, status: "finalised" };
+  await db.prepare(
+    "INSERT INTO payroll_runs (id, company_id, month, status, snapshot, created_at) VALUES (?, ?, ?, 'finalised', ?, ?)",
+  ).bind(crypto.randomUUID(), companyId, month, JSON.stringify(snapshot), new Date().toISOString()).run();
+  return snapshot;
 }
 
 export async function savePhoto(db, bucket, companyId, employeeId, file) {

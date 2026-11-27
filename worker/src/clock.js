@@ -7,16 +7,21 @@ export const METHODS = {
 
 export function matchFace(probe, templates, threshold = 0.5) {
   if (!Array.isArray(probe) || probe.length !== 128) return null;
-  let best = { distance: Infinity, employeeId: null };
-  let second = Infinity;
+  const bestByEmployee = new Map();
   for (const template of templates) {
-    if (!template?.descriptor || template.descriptor.length !== probe.length) continue;
+    if (!template?.descriptor || template.descriptor.length !== probe.length || !template.employeeId) continue;
     let sum = 0;
     for (let index = 0; index < probe.length; index += 1) sum += (probe[index] - template.descriptor[index]) ** 2;
     const distance = Math.sqrt(sum);
+    const previous = bestByEmployee.get(template.employeeId);
+    if (previous == null || distance < previous) bestByEmployee.set(template.employeeId, distance);
+  }
+  let best = { distance: Infinity, employeeId: null };
+  let second = Infinity;
+  for (const [employeeId, distance] of bestByEmployee) {
     if (distance < best.distance) {
       second = best.distance;
-      best = { distance, employeeId: template.employeeId };
+      best = { distance, employeeId };
     } else if (distance < second) second = distance;
   }
   if (!best.employeeId || best.distance > threshold) return null;

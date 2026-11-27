@@ -1,5 +1,6 @@
 import { can } from "./auth.js";
 import { faceCapture } from "./faceui.js";
+import { rands } from "./payroll.js";
 import { INDUSTRIES, PLANS } from "./platform.js";
 
 const NAV = [
@@ -168,16 +169,17 @@ export function employeePage({ user, employee, credentials = [], history = [], f
     ? `<section class="card"><h2>${issued.method === "nfc" ? "Write NFC card" : "Employee QR"}</h2><p>This credential is shown once. It contains no personal details.</p><p class="mono">${escapeHtml(issued.url)}</p>${issued.svg ?? ""}${writeScript}</section>`
     : "";
   return app(user, employee.first_name, `
-    <header class="head"><div><p class="eyebrow"><a href="/app/employees/${employee.id}">${escapeHtml(employee.employee_number ?? "")}</a></p><h1>${escapeHtml(employee.first_name)} ${escapeHtml(employee.last_name)}</h1><p class="muted">${escapeHtml(employee.role_title)} · ${escapeHtml(employee.phone || "No phone")} · ${escapeHtml(employee.email || "No email")}</p></div>${employee.photo_key ? `<img src="/app/employees/${employee.id}/photo" alt="" style="width:88px;height:88px;object-fit:cover;border-radius:16px">` : ""}</header>
+    <header class="head"><div><p class="eyebrow"><a href="/app/employees/${employee.id}">${escapeHtml(employee.employee_number ?? "")}</a></p><h1>${escapeHtml(employee.first_name)} ${escapeHtml(employee.last_name)}</h1><p class="muted">${escapeHtml(employee.role_title)} · ${escapeHtml(employee.phone || "No phone")} · ${escapeHtml(employee.email || "No email")}</p></div></header>
     ${error ? `<p class="error">${escapeHtml(error)}</p>` : ""}
     ${issuedBlock}
     <section class="card"><h2>Profile</h2>
-      <form method="post" action="/app/employees/${employee.id}/photo" enctype="multipart/form-data"><label>Photograph<input type="file" name="photo" accept="image/*" required></label><button class="button quiet" type="submit">Save photograph</button></form>
-      <p>Face ${faceReady ? "registered" : "not registered"} · PIN ${active("pin") || employee.has_pin ? "set" : "not set"} · NFC ${active("nfc") ? "linked" : "not issued"}</p>
+      <p>Facial recognition: ${faceReady ? "Registered" : "Not registered"} · PIN ${active("pin") || employee.has_pin ? "set" : "not set"} · NFC ${active("nfc") ? "linked" : "not issued"}</p>
+      ${faceReady ? `<form method="post" action="/app/employees/${employee.id}/face/delete"><button class="button quiet" type="submit">Delete facial template</button></form>` : ""}
+      ${can(user.role, "settings") ? `<form method="post" action="/app/employees/${employee.id}/pay"><label>Pay<select name="payType"><option value="monthly">Monthly salary</option><option value="hourly">Hourly rate</option></select></label><label>Amount in rands<input name="amount" inputmode="decimal" required></label><button class="button quiet" type="submit">Save pay</button></form>` : ""}
     </section>
     ${faceCapture({
       heading: "Register face",
-      detail: "The employee blinks once. We store a biometric template for this company only, with attendance consent under POPIA. A normal photograph is not the template.",
+      detail: "Use the front camera. The employee blinks, then looks ahead, left, right, up and down. Frames are captured automatically and stored as a template, not as an uploaded photograph.",
       mode: "enroll",
       postUrl: `/app/employees/${employee.id}/face`,
     })}
@@ -264,18 +266,41 @@ export function leavePage({ user, leave, employees, error = "" }) {
     </form>`);
 }
 
-export function reportsPage({ user, board }) {
+export function reportsPage({ user, report, month, locked = false }) {
+  if (locked) {
+    return app(user, "Reports", `<header class="head"><div><h1>Monthly reports</h1><p class="muted">Monthly attendance and payroll reports are a subscription feature. This workspace does not include them.</p></div></header>`);
+  }
+  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const policy = report.policy;
   return app(user, "Reports", `
-    <header class="head"><div><h1>Today's timesheet</h1><p class="muted">${board.hours} hours across the workforce. Late is minutes after the company start.</p></div></header>
-    <table class="card"><thead><tr><th>Employee</th><th>In</th><th>State</th><th>Late minutes</th><th>Minutes</th></tr></thead>
-    <tbody>${board.rows.map((row) => `<tr><td>${escapeHtml(row.first_name)} ${escapeHtml(row.last_name)}</td><td>${escapeHtml(row.firstLabel)}</td><td>${escapeHtml(labelState(row.state))}</td><td>${row.late}</td><td>${row.minutes}</td></tr>`).join("")}</tbody></table>`);
+    <header class="head"><div><h1>${escapeHtml(month)}</h1><p class="muted">${report.status === "finalised" ? "Finalised estimate. This snapshot is locked and is still not a wage payment." : "Estimated from attendance. It is not legally finalised payroll and no money is transferred."}</p></div>
+      <p class="row"><a class="button" href="/app/reports/export.csv?month=${encodeURIComponent(month)}">Excel</a><a class="button quiet" href="/app/reports/export.pdf?month=${encodeURIComponent(month)}">PDF</a></p></header>
+    <form method="get" action="/app/reports"><label>Month<input type="month" name="month" value="${escapeHtml(month)}"></label><button class="button quiet" type="submit">Open month</button></form>
+    <table class="card"><thead><tr><th>Employee</th><th>Hours</th><th>Overtime</th><th>Late</th><th>Absent</th><th>Lunch</th><th>Early</th><th>Estimated net</th></tr></thead>
+    <tbody>${report.rows.map((row) => `<tr><td>${escapeHtml(row.name)}</td><td>${(row.workedMinutes / 60).toFixed(1)}</td><td>${(row.overtimeMinutes / 60).toFixed(1)}</td><td>${row.lateMinutes}m</td><td>${row.absences}</td><td>${row.lunchMinutes}m</td><td>${row.earlyMinutes}m</td><td>${row.configured ? escapeHtml(rands(row.net)) : "Rate not set"}</td></tr>`).join("") || "<tr><td>No employees.</td></tr>"}</tbody></table>
+    <p class="muted">Hours are clocked pairs. A clock-out followed by another clock-in counts as lunch or a break. Extra break time is the portion beyond the company allowance. Overtime is time beyond the expected day. The default overtime multiplier is 1.5, in line with ordinary BCEA overtime, and this company can change it. Deductions run only when enabled here. They are estimates, not an authority to deduct from wages.</p>
+    ${report.status === "estimated" && can(user.role, "settings") ? `<form method="post" action="/app/reports/finalise"><input type="hidden" name="month" value="${escapeHtml(month)}"><button class="button" type="submit">Finalise this estimate</button></form>` : ""}
+    ${can(user.role, "settings") ? `<h2>Payroll rules</h2><form method="post" action="/app/reports/policy">
+      <label>Day start<input name="dayStart" value="${escapeHtml(policy.dayStart)}" required></label>
+      <label>Day end<input name="dayEnd" value="${escapeHtml(policy.dayEnd)}" required></label>
+      <label>Expected hours per week<input name="weeklyHours" value="${policy.weeklyMinutes / 60}" required></label>
+      <label>Lunch allowance minutes<input name="lunchAllowanceMinutes" value="${policy.lunchAllowanceMinutes}"></label>
+      <label>Late grace minutes<input name="lateGraceMinutes" value="${policy.lateGraceMinutes}"></label>
+      <label>Overtime multiplier<input name="overtimeMultiplier" value="${policy.overtimeMultiplier}"></label>
+      <fieldset><legend>Working days</legend>${days.map((label, index) => `<label class="check"><input type="checkbox" name="day${index}" ${policy.workDays.includes(index) ? "checked" : ""}> ${label}</label>`).join("")}</fieldset>
+      <label class="check"><input type="checkbox" name="deductLate" ${policy.deductLate ? "checked" : ""}> Deduct late time at the hourly rate</label>
+      <label class="check"><input type="checkbox" name="deductExtraBreak" ${policy.deductExtraBreak ? "checked" : ""}> Deduct break time beyond the allowance</label>
+      <label class="check"><input type="checkbox" name="deductAbsence" ${policy.deductAbsence ? "checked" : ""}> Deduct a missed shift</label>
+      <button class="button" type="submit">Save payroll rules</button>
+    </form>` : ""}`);
 }
 
 export function billingPage({ user, subscription, used }) {
   const plan = PLANS[subscription?.plan] ?? { label: subscription?.plan ?? "Starter", limit: subscription?.employee_limit ?? 25 };
   return app(user, "Billing", `
-    <header class="head"><div><h1>Billing</h1><p class="muted">Red Face licenses this workspace. Card collection is not connected, so this screen does not take a payment.</p></div></header>
-    <section class="stats">${stat("Plan", plan.label)}${stat("Employee limit", subscription?.employee_limit ?? plan.limit)}${stat("Active employees", used)}${stat("Status", subscription?.status ?? "active")}</section>`);
+    <header class="head"><div><h1>Billing</h1><p class="muted">Red Face (Pty) Ltd licenses this workspace. Launch access is free. Monthly reports and payroll estimates are subscription features and are included for now. Card collection is not connected, and the platform does not pay salaries.</p></div></header>
+    <section class="stats">${stat("Plan", plan.label)}${stat("Employee limit", subscription?.employee_limit ?? plan.limit)}${stat("Active employees", used)}${stat("Access", "Free launch")}</section>
+    <section class="card"><h2>Included on this workspace</h2><p>Monthly attendance reports, Excel and PDF export, overtime estimates, late and absence adjustments, and payroll summaries. These can be limited to a paid plan later without rebuilding the product.</p></section>`);
 }
 
 export function settingsPage({ user, team, error = "" }) {

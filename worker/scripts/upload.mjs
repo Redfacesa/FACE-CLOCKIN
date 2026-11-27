@@ -7,7 +7,7 @@ if (!token || !account) {
   process.exit(1);
 }
 
-const files = ["src/index.js", "src/clock.js", "src/crypto.js", "src/db.js", "src/page.js", "src/auth.js", "src/platform.js", "src/manage.js", "src/mail.js", "src/faceui.js", "vendor/uqr.mjs"];
+const files = ["src/index.js", "src/clock.js", "src/crypto.js", "src/db.js", "src/page.js", "src/auth.js", "src/platform.js", "src/manage.js", "src/mail.js", "src/faceui.js", "src/payroll.js", "vendor/uqr.mjs"];
 const secretFile = readFileSync(new URL("../.dev.vars", import.meta.url), "utf8");
 const sessionSecret = secretFile.match(/^SESSION_SECRET=(.*)$/m)?.[1];
 const smtpPassword = secretFile.match(/^SMTP_PASSWORD=(.*)$/m)?.[1];

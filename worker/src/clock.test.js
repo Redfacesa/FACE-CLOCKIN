@@ -16,6 +16,10 @@ test("a face matches its own template and rejects a different one", () => {
   assert.equal(matchFace(other, [{ employeeId: "james", descriptor: james }]), null);
   assert.equal(matchFace(james, [
     { employeeId: "james", descriptor: james },
+    { employeeId: "james", descriptor: james.map((value, index) => value + (index === 0 ? 0.002 : 0)) },
+  ]), "james");
+  assert.equal(matchFace(james, [
+    { employeeId: "james", descriptor: james },
     { employeeId: "sarah", descriptor: james.map((value, index) => value + (index === 0 ? 0.002 : 0)) },
   ]), null);
 });

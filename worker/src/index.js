@@ -36,6 +36,7 @@ import {
 } from "./manage.js";
 import { sendVerificationEmail } from "./mail.js";
 import { kioskPage, phoneConfirmPage, phonePage } from "./page.js";
+import { reportCsv, reportPdf } from "./payroll.js";
 import {
   authenticate,
   board,
@@ -46,6 +47,10 @@ import {
   createStation,
   currentUser,
   activateWorkspace,
+  deleteFace,
+  finalisePayroll,
+  hasFeature,
+  monthlyReport,
   employeeAttendance,
   employeeHasFace,
   employeeInCompany,
@@ -65,7 +70,9 @@ import {
   revokeCredential,
   saveCompany,
   saveDocument,
+  saveEmployeePay,
   saveFaceTemplate,
+  savePayPolicy,
   savePhoto,
   stationDirectory,
   subscriptionFor,
@@ -239,11 +246,25 @@ async function dashboard(request, env, url) {
     });
   }
 
+  const faceDelete = path.match(/^\/app\/employees\/([^/]+)\/face\/delete$/);
+  if (faceDelete && request.method === "POST") {
+    guard("face");
+    await deleteFace(env.DB, user.company_id, faceDelete[1]);
+    return redirect(`/app/employees/${faceDelete[1]}`);
+  }
+  const payMatch = path.match(/^\/app\/employees\/([^/]+)\/pay$/);
+  if (payMatch && request.method === "POST") {
+    guard("settings");
+    if (!hasFeature(await subscriptionFor(env.DB, user.company_id), "payroll")) throw httpError("Payroll is not included on this subscription.", 402, "plan_feature");
+    await saveEmployeePay(env.DB, user.company_id, payMatch[1], Object.fromEntries(await request.formData()));
+    return redirect(`/app/employees/${payMatch[1]}`);
+  }
+
   const faceMatch = path.match(/^\/app\/employees\/([^/]+)\/face$/);
   if (faceMatch && request.method === "POST") {
     guard("face");
     const body = await request.json();
-    await saveFaceTemplate(env.DB, user.company_id, faceMatch[1], body.descriptor);
+    await saveFaceTemplate(env.DB, user.company_id, faceMatch[1], body.samples);
     return json({ ok: true });
   }
 
@@ -356,9 +377,32 @@ async function dashboard(request, env, url) {
     const listed = await listEmployees(env.DB, user.company_id, 0);
     return html(leavePage({ user, leave: await listLeave(env.DB, user.company_id), employees: listed.employees }));
   }
-  if (path === "/app/reports") {
+  if (path === "/app/reports" || path.startsWith("/app/reports/")) {
     guard("reports");
-    return html(reportsPage({ user, board: await todayBoard() }));
+    const subscription = await subscriptionFor(env.DB, user.company_id);
+    const requested = url.searchParams.get("month") || local.workDate.slice(0, 7);
+    if (!hasFeature(subscription, "reports")) return html(reportsPage({ user, locked: true, month: requested, report: { rows: [], policy: {}, status: "estimated" } }));
+    if (path === "/app/reports/policy" && request.method === "POST") {
+      guard("settings");
+      if (!hasFeature(subscription, "payroll")) throw httpError("Payroll is not included on this subscription.", 402, "plan_feature");
+      const form = Object.fromEntries(await request.formData());
+      await savePayPolicy(env.DB, user.company_id, form);
+      return redirect("/app/reports");
+    }
+    if (path === "/app/reports/finalise" && request.method === "POST") {
+      guard("settings");
+      const form = await request.formData();
+      await finalisePayroll(env.DB, user.company_id, String(form.get("month") || requested), user.timezone);
+      return redirect(`/app/reports?month=${encodeURIComponent(String(form.get("month") || requested))}`);
+    }
+    const report = await monthlyReport(env.DB, user.company_id, requested, user.timezone);
+    if (path === "/app/reports/export.csv") {
+      return new Response(reportCsv(report), { headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename="attendance-${requested}.csv"` } });
+    }
+    if (path === "/app/reports/export.pdf") {
+      return new Response(reportPdf(report), { headers: { "content-type": "application/pdf", "content-disposition": `attachment; filename="attendance-${requested}.pdf"` } });
+    }
+    return html(reportsPage({ user, report, month: requested }));
   }
   if (path === "/app/billing" || path === "/app/subscription") {
     guard("billing");
