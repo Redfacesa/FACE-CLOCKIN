@@ -22,6 +22,8 @@ test("a face matches its own template and rejects a different one", () => {
     { employeeId: "james", descriptor: james },
     { employeeId: "sarah", descriptor: james.map((value, index) => value + (index === 0 ? 0.002 : 0)) },
   ]), null);
+  const closeImpostor = james.map((value, index) => value + (index === 0 ? 0.46 : 0));
+  assert.equal(matchFace(closeImpostor, [{ employeeId: "james", descriptor: james }]), null);
 });
 
 test("pin hashes verify the same secret and reject another", async () => {

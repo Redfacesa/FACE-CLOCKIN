@@ -175,7 +175,6 @@ export function employeePage({ user, employee, credentials = [], history = [], f
     <section class="card"><h2>Profile</h2>
       <p>Facial recognition: ${faceReady ? "Registered" : "Not registered"} · PIN ${active("pin") || employee.has_pin ? "set" : "not set"} · NFC ${active("nfc") ? "linked" : "not issued"}</p>
       ${faceReady ? `<form method="post" action="/app/employees/${employee.id}/face/delete"><button class="button quiet" type="submit">Delete facial template</button></form>` : ""}
-      ${can(user.role, "settings") ? `<form method="post" action="/app/employees/${employee.id}/pay"><label>Pay<select name="payType"><option value="monthly">Monthly salary</option><option value="hourly">Hourly rate</option></select></label><label>Amount in rands<input name="amount" inputmode="decimal" required></label><button class="button quiet" type="submit">Save pay</button></form>` : ""}
     </section>
     ${faceCapture({
       heading: "Register face",
@@ -183,6 +182,7 @@ export function employeePage({ user, employee, credentials = [], history = [], f
       mode: "enroll",
       postUrl: `/app/employees/${employee.id}/face`,
     })}
+    ${can(user.role, "settings") ? `<section class="card"><h2>Pay</h2><form method="post" action="/app/employees/${employee.id}/pay"><label>Pay<select name="payType"><option value="monthly">Monthly salary</option><option value="hourly">Hourly rate</option></select></label><label>Amount in rands<input name="amount" inputmode="decimal" required></label><button class="button quiet" type="submit">Save pay</button></form></section>` : ""}
     <section class="card"><h2>Attendance</h2>
       <table>${history.map((event) => `<tr><td>${escapeHtml(event.work_date)}</td><td>${escapeHtml(event.timeLabel)}</td><td>${escapeHtml(event.event_type === "CLOCK_IN" ? "In" : "Out")}</td><td>${escapeHtml(event.method)}</td></tr>`).join("") || "<tr><td>No attendance yet.</td></tr>"}</table>
     </section>

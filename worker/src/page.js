@@ -63,8 +63,16 @@ export function kioskPage(code) {
     const flow = document.querySelector("#flow");
 
     const facePanel = document.querySelector("#face-panel");
-    function showHome() { flow.classList.add("hidden"); facePanel.classList.add("hidden"); home.classList.remove("hidden"); }
+    function resetRecognition() { flow.innerHTML = ""; flow.classList.add("hidden"); }
+    function showHome() { resetRecognition(); facePanel.classList.add("hidden"); home.classList.remove("hidden"); }
     function showFlow(html) { home.classList.add("hidden"); facePanel.classList.add("hidden"); flow.classList.remove("hidden"); flow.innerHTML = html; }
+    function showFaceFailure(message) {
+      const text = String(message || "Face not recognised.").replace(/[<>]/g, "");
+      showFlow('<p class="muted">Recognition failed</p><h1>' + text + '</h1><p>Please try again or use another clocking method.</p><div class="actions"><button type="button" id="fail-nfc"><strong>NFC card</strong><span>Tap a registered card</span></button><button type="button" id="fail-pin"><strong>Employee PIN</strong><span>Number and personal PIN</span></button></div><p><button class="primary" type="button" id="fail-face">Try face again</button></p>');
+      document.querySelector("#fail-nfc").onclick = startNfc;
+      document.querySelector("#fail-pin").onclick = startPin;
+      document.querySelector("#fail-face").onclick = startFace;
+    }
 
     async function api(path, body) {
       const response = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -142,8 +150,8 @@ export function kioskPage(code) {
     }
 
     function startFace() {
+      resetRecognition();
       home.classList.add("hidden");
-      flow.classList.add("hidden");
       facePanel.classList.remove("hidden");
     }
 
@@ -168,14 +176,17 @@ export function kioskPage(code) {
       tick();
       setInterval(tick, 1000);
       window.faceRequest = () => ({ stationId: state.station.id });
+      window.onFaceAttemptStart = () => { resetRecognition(); home.classList.add("hidden"); facePanel.classList.remove("hidden"); };
+      window.onFaceRejected = (message) => { showFaceFailure(message); };
       window.onFaceIdentified = (payload, descriptor) => {
-        facePanel.classList.add("hidden");
+        if (!payload?.employee?.firstName) { showFaceFailure("Face not recognised."); return; }
         const leaving = payload.suggestedAction === "CLOCK_OUT";
-        showFlow('<h1>Are you ' + (leaving ? "clocking out" : "clocking in") + ', ' + payload.employee.firstName + '?</h1><p><button class="primary" id="yes" type="button">Confirm</button> <button id="back" type="button">Not now</button></p><p class="error" id="err"></p>');
+        const name = String(payload.employee.firstName).replace(/[<>]/g, "");
+        showFlow('<p class="muted">Scanning face...</p><h1>Are you ' + (leaving ? "clocking out" : "clocking in") + ', ' + name + '?</h1><p><button class="primary" id="yes" type="button">Confirm</button> <button id="back" type="button">Not now</button></p><p class="error" id="err"></p>');
         document.querySelector("#back").onclick = showHome;
         document.querySelector("#yes").onclick = async () => {
           try { render(await api("/api/clock", { method: "face", stationId: state.station.id, descriptor, action: payload.suggestedAction })); }
-          catch (error) { document.querySelector("#err").textContent = error.message; }
+          catch (error) { showFaceFailure(error.message); }
         };
       };
       document.querySelector("#face-back").onclick = showHome;

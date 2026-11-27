@@ -277,6 +277,12 @@ export async function pendingOwner(db, email) {
   ).bind(cleanEmail(email)).first();
 }
 
+function descriptorDistance(left, right) {
+  let sum = 0;
+  for (let index = 0; index < left.length; index += 1) sum += (left[index] - right[index]) ** 2;
+  return Math.sqrt(sum);
+}
+
 function descriptorOrThrow(descriptor) {
   if (!Array.isArray(descriptor) || descriptor.length !== 128 || descriptor.some((item) => typeof item !== "number" || !Number.isFinite(item))) {
     throw httpError("The face scan was not usable. Hold each angle until it is captured.", 400, "face_invalid");
@@ -290,6 +296,13 @@ export async function saveFaceTemplate(db, companyId, employeeId, samples) {
     const sample = Array.isArray(samples) ? samples.find((item) => item?.pose === pose) : null;
     return { pose, descriptor: descriptorOrThrow(sample?.descriptor) };
   });
+  const center = captured.find((sample) => sample.pose === "center").descriptor;
+  for (const sample of captured) {
+    if (sample.pose === "center") continue;
+    const gap = descriptorDistance(center, sample.descriptor);
+    if (gap < 0.02) throw httpError("Each step needs a different angle. Turn your head and register again.", 400, "face_inconsistent");
+    if (gap > 0.72) throw httpError("Those angles do not look like the same person. Use better light and register again.", 400, "face_inconsistent");
+  }
   const employee = await employeeInCompany(db, companyId, employeeId);
   if (!employee) throw httpError("That employee is not in this company.", 404, "employee_missing");
   const now = new Date().toISOString();

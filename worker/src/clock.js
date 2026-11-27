@@ -5,8 +5,8 @@ export const METHODS = {
   pin: "PIN",
 };
 
-export function matchFace(probe, templates, threshold = 0.5) {
-  if (!Array.isArray(probe) || probe.length !== 128) return null;
+export function classifyFace(probe, templates) {
+  if (!Array.isArray(probe) || probe.length !== 128) return { status: "unknown", employeeId: null, distance: null };
   const bestByEmployee = new Map();
   for (const template of templates) {
     if (!template?.descriptor || template.descriptor.length !== probe.length || !template.employeeId) continue;
@@ -24,9 +24,18 @@ export function matchFace(probe, templates, threshold = 0.5) {
       best = { distance, employeeId };
     } else if (distance < second) second = distance;
   }
-  if (!best.employeeId || best.distance > threshold) return null;
-  if (second < Infinity && second - best.distance < 0.05) return null;
-  return best.employeeId;
+  if (!best.employeeId) return { status: "unknown", employeeId: null, distance: null };
+  const alone = bestByEmployee.size === 1;
+  const separated = alone || second - best.distance >= 0.08;
+  const acceptAt = alone ? 0.38 : 0.42;
+  if (best.distance <= acceptAt && separated) return { status: "match", employeeId: best.employeeId, distance: best.distance };
+  if (best.distance <= 0.55) return { status: "low_confidence", employeeId: null, distance: best.distance };
+  return { status: "unknown", employeeId: null, distance: best.distance };
+}
+
+export function matchFace(probe, templates) {
+  const result = classifyFace(probe, templates);
+  return result.status === "match" ? result.employeeId : null;
 }
 
 export function suggestedAction(lastEventType) {

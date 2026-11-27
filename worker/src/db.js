@@ -1,4 +1,4 @@
-import { matchFace, suggestedAction } from "./clock.js";
+import { classifyFace, suggestedAction } from "./clock.js";
 import { lookupKey, verifySecret } from "./crypto.js";
 
 export async function kioskSnapshot(db, code) {
@@ -112,9 +112,10 @@ export async function resolveEmployee(db, { method, stationId, employeeId, emplo
   if (method === "face") {
     const rows = await db.prepare("SELECT employee_id, descriptor FROM face_templates WHERE company_id = ? AND status = 'active'").bind(station.company_id).all();
     const templates = (rows.results ?? []).map((row) => ({ employeeId: row.employee_id, descriptor: JSON.parse(row.descriptor) }));
-    const matchedId = matchFace(descriptor, templates);
-    if (!matchedId) throw httpError("That face is not registered at this company.", 401, "face_rejected");
-    return { employee: await activeEmployee(db, matchedId, station.company_id), station };
+    const verdict = classifyFace(descriptor, templates);
+    if (verdict.status === "low_confidence") throw httpError("Try again. Look straight at the camera.", 401, "face_low_confidence");
+    if (verdict.status !== "match") throw httpError("Face not recognised.", 401, "face_rejected");
+    return { employee: await activeEmployee(db, verdict.employeeId, station.company_id), station };
   }
 
   throw httpError("Choose NFC, QR, face, or PIN.", 400, "method_rejected");

@@ -9,7 +9,18 @@ export function faceCapture({ heading, detail, mode, postUrl }) {
     <h2>${heading}</h2>
     <p>${detail}</p>
     ${enroll ? `<label class="check"><input type="checkbox" id="face-consent"> The employee consents to a facial template being stored for attendance. It can be deleted from this profile.</label>` : ""}
-    <video id="face-camera" autoplay muted playsinline style="width:min(100%,420px);border-radius:18px;background:#000;aspect-ratio:4/3;object-fit:cover;transform:scaleX(-1)"></video>
+    <style>
+      .scan-frame { position:relative; width:min(100%,420px); }
+      .scan-frame video, .scan-frame canvas { width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:18px; background:#000; transform:scaleX(-1); }
+      .scan-frame canvas { position:absolute; inset:0; height:100%; pointer-events:none; }
+      .scan-bar { position:absolute; left:10%; right:10%; height:2px; background:rgba(245,245,245,.85); box-shadow:0 0 12px rgba(245,245,245,.6); animation:face-scan 1.8s ease-in-out infinite; }
+      @keyframes face-scan { from { top:14%; } to { top:80%; } }
+    </style>
+    <div class="scan-frame">
+      <video id="face-camera" autoplay muted playsinline></video>
+      <canvas id="face-wire"></canvas>
+      <span class="scan-bar"></span>
+    </div>
     <ol id="face-steps" style="display:flex;gap:8px;flex-wrap:wrap;list-style:none;padding:0">${steps.map(([id, label]) => `<li data-step="${id}" style="padding:6px 10px;border:1px solid #2c2c2c;border-radius:999px">${label}</li>`).join("")}</ol>
     <p id="face-state">${enroll ? "Tick consent, then start. The highlighted step is the one being captured." : "Start the camera and blink once."}</p>
     <p><button class="button" type="button" id="face-start">${enroll ? "Start face registration" : "Open camera"}</button> <button class="button quiet" type="button" id="face-capture" hidden>Capture this step</button></p>
@@ -64,11 +75,16 @@ export function faceCapture({ heading, detail, mode, postUrl }) {
             if (!video.videoWidth) {
               state.textContent = "Waiting for the camera picture…";
             } else {
-              const found = await faceapi.detectSingleFace(video, options).withFaceLandmarks().withFaceDescriptor();
-              latest = found || null;
-              if (!found) {
+              const faces = await faceapi.detectAllFaces(video, options).withFaceLandmarks().withFaceDescriptors();
+              const found = faces.length === 1 ? faces[0] : null;
+              latest = found;
+              drawWire(found);
+              if (faces.length > 1) {
                 held = 0;
-                state.textContent = "No face in the oval. Move closer and face the camera. " + prompts[steps[step]];
+                state.textContent = "Only one person should be in front of the camera.";
+              } else if (!found) {
+                held = 0;
+                state.textContent = "Reposition your face. " + prompts[steps[step]];
               } else {
                 const points = found.landmarks.positions;
                 const pose = headPose(points);
@@ -126,24 +142,56 @@ export function faceCapture({ heading, detail, mode, postUrl }) {
         }
         watch();
         async function submit(descriptor, captured, finish) {
-          state.textContent = enroll ? "Saving the facial template…" : "Checking the face…";
+          state.textContent = enroll ? "Saving the facial template…" : "Scanning face…";
+          if (!enroll) window.onFaceAttemptStart?.();
           try {
             const extra = window.faceRequest?.() ?? {};
             const body = enroll ? { samples: captured, ...extra } : { descriptor, method: "face", ...extra };
             const response = await fetch(${JSON.stringify(postUrl)}, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
             const payload = await response.json();
-            if (!response.ok) throw new Error(payload.error || "The face was not accepted.");
+            if (!response.ok) throw new Error(payload.error || "Face not recognised.");
+            if (!enroll && !payload?.employee?.firstName) throw new Error("Face not recognised.");
             finish();
             if (enroll) { state.textContent = "Facial recognition: registered."; return; }
             window.onFaceIdentified?.(payload, descriptor);
           } catch (error) {
-            state.textContent = error.message;
+            state.textContent = error.message || "Face not recognised.";
+            if (!enroll) window.onFaceRejected?.(state.textContent);
           }
         }
       } catch (error) {
         state.textContent = error.message || "The camera could not start.";
       }
     };
+    function drawWire(found) {
+      const canvas = document.querySelector("#face-wire");
+      if (!canvas || !video.videoWidth) return;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const context = canvas.getContext("2d");
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      if (!found?.landmarks?.positions) return;
+      context.strokeStyle = "rgba(245,245,245,0.9)";
+      context.fillStyle = "rgba(245,245,245,0.95)";
+      context.lineWidth = 2;
+      const contours = [[0,17],[17,22],[22,27],[27,31],[31,36],[36,42],[42,48],[48,60],[60,68]];
+      for (const [from, to] of contours) {
+        context.beginPath();
+        const ring = to === 42 || to === 48 || to === 68;
+        for (let index = from; index < to; index += 1) {
+          const point = found.landmarks.positions[index];
+          if (index === from) context.moveTo(point.x, point.y);
+          else context.lineTo(point.x, point.y);
+        }
+        if (ring) context.closePath();
+        context.stroke();
+      }
+      for (const point of found.landmarks.positions) {
+        context.beginPath();
+        context.arc(point.x, point.y, 2.5, 0, Math.PI * 2);
+        context.fill();
+      }
+    }
     function eyeOpen(points, start) {
       const distance = (a, b) => Math.hypot(points[a].x - points[b].x, points[a].y - points[b].y);
       const width = distance(start, start + 3) || 1;
