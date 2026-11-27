@@ -572,6 +572,16 @@ async function identify(request, env) {
 async function clock(request, env) {
   const body = await request.json();
   const resolved = await resolveEmployee(env.DB, body);
+  if (body.method === "qr") {
+    if (!body.pin) throw httpError("Enter the employee PIN. A QR pass does not record attendance by itself.", 401, "pin_required");
+    const pinCheck = await resolveEmployee(env.DB, {
+      method: "pin",
+      stationId: body.stationId,
+      employeeId: resolved.employee.id,
+      pin: body.pin,
+    });
+    if (pinCheck.employee.id !== resolved.employee.id) throw httpError("That PIN does not match this pass.", 401, "pin_rejected");
+  }
   const now = zonedNow(new Date(), resolved.station.timezone);
   const recorded = await recordAttendance(env.DB, {
     employee: resolved.employee,

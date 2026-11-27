@@ -5,145 +5,179 @@ function escapeHtml(value) {
 }
 
 const publicStyle = `
-  :root { color-scheme: light; --ink:#1c1c1c; --muted:#5c5854; --line:#e4e0db; --red:#9f1d2d; --paper:#f7f5f2; }
+  :root { color-scheme: dark; --ink:#f6f4f2; --muted:#b7b1ab; --line:rgba(255,255,255,.12); --red:#9f1d2d; --panel:rgba(255,255,255,.045); }
   * { box-sizing: border-box; }
-  body { margin:0; color:var(--ink); background:#fff; font-family:"Avenir Next","Segoe UI",sans-serif; line-height:1.5; }
+  body { margin:0; color:var(--ink); background:radial-gradient(900px 520px at 88% -8%, rgba(159,29,45,.42), transparent 52%), radial-gradient(640px 380px at -12% 18%, rgba(255,255,255,.05), transparent 46%), #0c0c0e; font-family:"Avenir Next","Segoe UI",sans-serif; line-height:1.5; }
   a { color:inherit; }
-  header.top { display:flex; justify-content:space-between; gap:16px; align-items:center; padding:22px 7vw; border-bottom:1px solid var(--line); }
-  .brand { letter-spacing:.18em; font-size:13px; text-decoration:none; }
+  header.top { position:sticky; top:0; z-index:4; display:flex; justify-content:space-between; gap:16px; align-items:center; padding:16px 5vw; background:rgba(12,12,14,.78); backdrop-filter:blur(18px); border-bottom:1px solid var(--line); }
+  .brand { letter-spacing:.2em; font-size:13px; text-decoration:none; display:grid; }
+  .brand small { letter-spacing:.22em; color:var(--red); font-size:10px; margin-top:3px; }
   nav { display:flex; gap:18px; align-items:center; }
   nav a { text-decoration:none; color:var(--muted); }
-  .btn { background:var(--red); color:#fff; text-decoration:none; border:0; border-radius:999px; padding:12px 18px; display:inline-block; font:inherit; }
-  .btn.quiet { background:#fff; color:var(--ink); border:1px solid var(--line); }
-  main { padding:0 7vw 72px; }
-  .hero { display:grid; grid-template-columns:1.1fr .9fr; gap:48px; align-items:center; padding:72px 0 36px; }
-  h1 { font-size:clamp(42px, 6vw, 68px); line-height:.95; letter-spacing:-.045em; margin:0 0 16px; font-weight:560; }
-  h2 { font-size:clamp(28px, 3vw, 40px); letter-spacing:-.03em; margin:0 0 8px; font-weight:560; }
-  .lead { font-size:18px; color:var(--muted); max-width:46ch; }
-  .section { padding:48px 0; border-top:1px solid var(--line); }
-  .grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
-  .card { background:var(--paper); border-radius:22px; padding:22px; }
-  .phone { background:#1c1c1c; color:#fff; border-radius:28px; padding:28px; min-height:280px; }
-  .phone strong { display:block; font-size:28px; margin:18px 0 8px; }
-  .step { display:flex; gap:14px; padding:12px 0; border-bottom:1px solid var(--line); }
-  .price { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
-  .price article { border:1px solid var(--line); border-radius:22px; padding:24px; }
+  .btn { background:var(--red); color:#fff; text-decoration:none; border:0; border-radius:999px; padding:12px 18px; display:inline-block; font:inherit; cursor:pointer; }
+  .btn.quiet { background:transparent; color:var(--ink); border:1px solid var(--line); }
+  .actions { display:flex; gap:12px; flex-wrap:wrap; margin:22px 0; }
+  main { padding:0 5vw 80px; }
+  .hero { display:grid; grid-template-columns:1.05fr .95fr; gap:48px; align-items:center; padding:64px 0 28px; }
+  .kicker { letter-spacing:.18em; text-transform:uppercase; color:var(--red); font-size:12px; margin:0 0 12px; }
+  .status { display:inline-flex; align-items:center; gap:8px; border:1px solid var(--line); border-radius:999px; padding:6px 12px; color:var(--muted); font-size:12px; letter-spacing:.12em; }
+  .pulse { width:8px; height:8px; border-radius:50%; background:#3ddc84; box-shadow:0 0 12px #3ddc84; }
+  h1 { font-size:clamp(40px, 5.4vw, 68px); line-height:.96; letter-spacing:-.045em; margin:14px 0 16px; font-weight:560; }
+  h2 { font-size:clamp(28px, 3vw, 42px); letter-spacing:-.035em; margin:0 0 8px; font-weight:560; }
+  .lead { font-size:18px; color:var(--muted); max-width:48ch; }
+  .section { padding:56px 0; border-top:1px solid var(--line); }
+  .grid, .price, .methods { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .methods { grid-template-columns:repeat(3, 1fr); margin-top:22px; }
+  .card, .price article, .method { background:var(--panel); border:1px solid var(--line); border-radius:24px; padding:22px; backdrop-filter:blur(16px); }
+  .method span, .tiles span, .demo-kicker { display:block; color:var(--muted); letter-spacing:.12em; text-transform:uppercase; font-size:12px; }
+  .method strong { display:block; font-size:28px; margin:16px 0 6px; letter-spacing:-.03em; }
+  .method:first-child { box-shadow:inset 0 0 0 1px rgba(159,29,45,.65); }
+  .device { background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02)); border:1px solid var(--line); border-radius:36px; padding:16px; box-shadow:0 30px 80px rgba(0,0,0,.35); }
+  .device-bar { display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:12px; letter-spacing:.14em; color:var(--muted); padding:6px 8px 12px; }
+  .visor { position:relative; height:280px; border-radius:28px; overflow:hidden; background:radial-gradient(circle at 50% 42%, rgba(159,29,45,.28), #141416 62%); }
+  .mesh { width:100%; height:100%; }
+  .scan { position:absolute; left:12%; right:12%; height:2px; background:linear-gradient(90deg, transparent, #fff, transparent); box-shadow:0 0 18px #fff; animation:scan 2.2s ease-in-out infinite alternate; }
+  .demo-copy { padding:8px 8px 4px; }
+  .demo-copy h3 { font-size:34px; letter-spacing:-.04em; margin:8px 0; }
+  .chip { display:inline-block; margin-top:8px; border:1px solid var(--line); border-radius:999px; padding:8px 12px; }
+  .demo-nav, .stage-nav { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-top:12px; }
+  .demo-nav button, .stage-nav button { font:inherit; color:#fff; background:rgba(255,255,255,.04); border:1px solid var(--line); border-radius:16px; padding:12px 8px; }
+  .demo-nav button.on, .stage-nav button.on { background:var(--red); border-color:transparent; }
+  .stage { min-height:220px; border-radius:28px; padding:28px; background:#121214; border:1px solid var(--line); position:relative; overflow:hidden; }
+  .stage .scan { top:30%; }
+  .bars { display:flex; align-items:end; gap:8px; height:120px; margin-top:18px; }
+  .bars span { flex:1; background:var(--red); border-radius:8px 8px 0 0; display:block; }
   .price strong { font-size:36px; letter-spacing:-.04em; }
-  form { display:grid; gap:12px; max-width:640px; }
+  form { display:grid; gap:12px; max-width:680px; }
   label { display:grid; gap:6px; }
-  input, select, textarea { font:inherit; padding:12px 14px; border:1px solid var(--line); border-radius:12px; background:#fff; }
+  input, select, textarea { font:inherit; padding:12px 14px; border:1px solid var(--line); border-radius:12px; background:rgba(0,0,0,.35); color:var(--ink); }
   fieldset { border:1px solid var(--line); border-radius:16px; }
-  .error { color:#9f1d2d; }
-  .foot { color:var(--muted); font-size:13px; padding:24px 7vw 32px; }
-  .tiles { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:28px; }
-  .tiles article { min-height:128px; border-radius:24px; padding:18px; background:#1c1c1c; color:#fff; }
-  .tiles article:nth-child(1) { background:#9f1d2d; }
-  .tiles span { display:block; color:rgba(255,255,255,.72); font-size:13px; letter-spacing:.08em; text-transform:uppercase; }
-  .tiles strong { display:block; font-size:22px; margin-top:18px; }
-  .demo { background:#111; color:#fff; border-radius:32px; padding:18px; max-width:420px; }
-  .demo-screen { min-height:340px; border-radius:24px; padding:22px; background:#1b1b1b; position:relative; overflow:hidden; }
-  .demo-screen .scan { position:absolute; left:12%; right:12%; height:2px; background:#fff; animation:scan 1.8s ease-in-out infinite alternate; }
-  .demo-kicker { letter-spacing:.14em; text-transform:uppercase; font-size:12px; color:#d7d2cc; }
-  .demo-screen h3 { font-size:40px; letter-spacing:-.04em; margin:16px 0; }
-  .chip { display:inline-block; margin-top:18px; border:1px solid rgba(255,255,255,.3); border-radius:999px; padding:8px 12px; }
-  .demo-nav { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-top:12px; }
-  .demo-nav button { font:inherit; color:#fff; background:#242424; border:0; border-radius:16px; padding:12px 8px; }
-  .demo-nav button.on { background:#9f1d2d; }
+  .error { color:#f0c2c6; }
+  .foot { color:var(--muted); font-size:13px; padding:8px 5vw 32px; }
   .review-actions { display:grid; gap:8px; }
   .review-actions .btn { text-align:center; }
-  @keyframes scan { from { top:18%; } to { top:72%; } }
-  @media (max-width:800px) {
-    header.top { position:sticky; top:0; background:#fff; z-index:2; padding:16px; }
-    nav { width:100%; }
-    main { padding:0 16px 40px; }
-    .hero, .grid, .price { grid-template-columns:1fr; gap:18px; }
-    .hero { padding:28px 0 12px; }
+  @keyframes scan { from { top:16%; } to { top:78%; } }
+  @media (max-width:860px) {
+    header.top, main { padding-left:16px; padding-right:16px; }
+    nav a:not(.btn) { display:none; }
+    nav { gap:8px; }
+    .hero, .grid, .price, .methods { grid-template-columns:1fr; }
+    .hero { padding-top:28px; }
     h1 { font-size:40px; }
-    .card, .price article, .demo { border-radius:24px; }
-    .btn { width:100%; text-align:center; }
+    .actions .btn, .btn { width:100%; text-align:center; }
+    .methods { grid-template-columns:1fr 1fr; }
   }
 `;
 
 export function landingPage() {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Try Clock In</title><style>${publicStyle}</style></head><body>
-    <header class="top"><a class="brand" href="/">TRY CLOCK IN</a><nav><a href="#how">How it works</a><a href="#pricing">Pricing</a><a href="/login">Business login</a><a class="btn" href="/signup">Register your business</a></nav></header>
+    <header class="top"><a class="brand" href="/">TRY CLOCK IN<small>WORKFORCE TECHNOLOGY</small></a><nav><a href="#how">How it works</a><a href="#security">Security</a><a href="#pricing">Pricing</a><a href="/login">Business login</a><a class="btn" href="/signup">Register your business</a></nav></header>
     <main>
       <section class="hero">
         <div>
-          <p class="brand">REDFACE</p>
-          <h1>Your workforce. Your time. Under control.</h1>
-          <p class="lead">Try Clock In helps businesses manage employee attendance, face recognition, NFC tags, shift schedules and working hours from one platform.</p>
-          <p><a class="btn" href="/signup">Register your business</a></p>
-          <p>Already registered? <a href="/login">Business login</a></p>
-          <div class="tiles">
-            <article><span>Clock in</span><strong>Face</strong></article>
-            <article><span>Backup</span><strong>Tags</strong></article>
-            <article><span>Owner</span><strong>People</strong></article>
-            <article><span>Hours</span><strong>Reports</strong></article>
+          <p class="status"><span class="pulse"></span> BIOMETRIC SYSTEM · SYSTEM READY</p>
+          <h1>Your workforce. Accounted for. In real time.</h1>
+          <p class="lead">A smarter way to manage employee attendance, biometric verification, NFC clock-ins, QR identity passes, working hours and workforce operations — from one platform.</p>
+          <div class="actions"><a class="btn" href="/signup">Register your business</a><a class="btn quiet" href="#how">Explore how it works</a></div>
+          <div class="methods">
+            <article class="method"><span>Biometric</span><strong>Face</strong><p>Live match at the station.</p></article>
+            <article class="method"><span>Tap</span><strong>NFC</strong><p>A card linked to the same person.</p></article>
+            <article class="method"><span>Scan</span><strong>QR</strong><p>A pass that still needs a PIN.</p></article>
           </div>
         </div>
-        <div class="demo" id="demo">
-          <div class="demo-screen">
-            <div class="scan" id="demo-scan" hidden></div>
+        <div class="device" id="demo">
+          <div class="device-bar"><span class="status"><span class="pulse"></span> LIVE DEMO</span><strong id="hero-clock">--:--</strong></div>
+          <div class="visor" aria-hidden="true">
+            <svg class="mesh" viewBox="0 0 200 240">
+              <ellipse cx="100" cy="108" rx="46" ry="62" fill="none" stroke="rgba(255,255,255,.75)" stroke-width="1.4"/>
+              <path d="M62 104 Q78 96 90 104" fill="none" stroke="#fff" stroke-width="1.2"/>
+              <path d="M110 104 Q122 96 138 104" fill="none" stroke="#fff" stroke-width="1.2"/>
+              <path d="M100 112 V138" fill="none" stroke="rgba(255,255,255,.7)" stroke-width="1.2"/>
+              <path d="M84 156 Q100 168 116 156" fill="none" stroke="#fff" stroke-width="1.2"/>
+              <path d="M70 78 Q100 58 130 78" fill="none" stroke="rgba(255,90,90,.9)" stroke-width="1.2"/>
+              <circle cx="78" cy="108" r="2" fill="#fff"/><circle cx="122" cy="108" r="2" fill="#fff"/>
+            </svg>
+            <span class="scan" id="demo-scan"></span>
+          </div>
+          <div class="demo-copy">
             <p class="demo-kicker" id="demo-kicker">Demonstration</p>
-            <h3 id="demo-title">08:02</h3>
-            <p id="demo-body">An employee arrives at the door.</p>
+            <h3 id="demo-title">Identity verification</h3>
+            <p id="demo-body">A preview of the employee clocking experience. This is not a live attendance record.</p>
             <span class="chip" id="demo-chip">Face recognition</span>
           </div>
           <div class="demo-nav" id="demo-nav"></div>
         </div>
       </section>
       <section class="section" id="how">
-        <h2>How people clock in</h2>
-        <div class="grid">
-          <article class="card"><h3>Face clocking</h3><p>The employee looks at the station. The live face is matched to their company only. They see Clocked in or Clocked out.</p></article>
-          <article class="card"><h3>Tag clocking</h3><p>An assigned NFC card identifies the same employee. The tag is a backup, not a second attendance record.</p></article>
-          <article class="card"><h3>Management</h3><p>The owner adds people, registers a face, and sees who is in, out, late, or absent. Employees do not create the company.</p></article>
-          <article class="card"><h3>Reports</h3><p>Hours, lunch, lateness and overtime are read from the clocking record. A schedule does not rewrite a punch.</p></article>
+        <p class="kicker">How the technology works</p>
+        <h2>Four steps. One attendance record.</h2>
+        <p class="lead">Tap a step. The panel is a demonstration of the product, not a clocking of a real employee.</p>
+        <div class="stage" id="stage">
+          <p class="demo-kicker" id="stage-kicker">01 — Biometric registration</p>
+          <h3 id="stage-title">360° facial capture</h3>
+          <p id="stage-body">The owner registers a face with consent. The camera stays visible. Landmarks follow the jaw, eyes, nose and mouth. Five angles build the template.</p>
+          <div class="scan" id="stage-scan"></div>
         </div>
+        <div class="stage-nav" id="stage-nav"></div>
       </section>
-      <section class="section">
-        <h2>Watch a day</h2>
-        <p class="lead">This is a demonstration, not a live clocking record. Tap a step or let it play.</p>
+      <section class="section" id="security">
+        <p class="kicker">Access control</p>
+        <h2>A code identifies. It does not clock anyone in.</h2>
+        <div class="grid">
+          <article class="card"><h3>Face</h3><p>The live face is compared with that company’s templates. A failed match does not keep the previous person’s name.</p></article>
+          <article class="card"><h3>NFC</h3><p>The card stores a random link, not a name or ID number. A lost card can be deactivated.</p></article>
+          <article class="card"><h3>QR pass</h3><p>Each employee can hold a personal QR. It is a random, revocable token. The station still asks for that employee’s PIN before it records attendance.</p></article>
+          <article class="card"><h3>One record</h3><p>Face, card and QR all write the same clock-in or clock-out. Hours, lateness and overtime are read from that record.</p></article>
+        </div>
       </section>
       <section class="section" id="pricing">
-        <h2>Pricing</h2>
+        <p class="kicker">Onboarding</p>
+        <h2>Only an authorised owner can register.</h2>
+        <p class="lead">The application collects the business, the owner, and private documents. Clocking stays off until Try Clock In approves it.</p>
         <div class="price">
-          <article><p>Starter</p><strong>Free</strong><p>Up to 5 employees. Face, tags, and the daily attendance board.</p></article>
-          <article><p>Business</p><strong>Paid</strong><p>6 or more employees. Shifts, reports and exports. The monthly amount is set before launch.</p></article>
+          <article><p>Free</p><strong>5 people</strong><p>Face, NFC, QR passes and the daily board. No card is charged.</p></article>
+          <article><p>Business</p><strong>Paid</strong><p>Larger teams, reports and exports. The monthly amount is set before launch.</p></article>
         </div>
       </section>
       <section class="section">
-        <h2>Questions</h2>
-        <p><strong>Who can register?</strong> The business owner or a person with authority to represent the business. Employees cannot open a company.</p>
-        <p><strong>Does a new company start immediately?</strong> No. The application is reviewed. Clocking stays off until it is approved.</p>
-        <p><strong>What if there is no CIPC certificate?</strong> A sole proprietor can apply with other proof of the business and the owner's identity.</p>
-        <p><strong>What about face data?</strong> A face template is stored only with consent, only for that company, and it can be deleted. A tag or PIN remains available.</p>
-      </section>
-      <section class="section">
-        <h2>Register your business</h2>
-        <p class="lead">Tell us who the business is. We review the documents before the workspace opens.</p>
+        <h2>Time is valuable. Track it intelligently.</h2>
+        <p class="lead">Register the business. Add the people. They clock in by face, card, or QR pass.</p>
         <p><a class="btn" href="/signup">Register your business</a></p>
       </section>
     </main>
     <p class="foot">© Red Face (Pty) Ltd. Licensed software.</p>
     <script>
       const frames = [
-        ["Arrive", "08:02", "An employee arrives at the door.", "Face recognition", false],
-        ["Scanning", "Face aligned", "The frame follows the live face. A stranger is not named.", "Tracking", true],
-        ["Clocked in", "Welcome", "The match is saved for this company only.", "Clocked in", false],
-        ["Lunch", "13:00", "Lunch starts. That time is not counted as overtime.", "On lunch", false],
-        ["Back", "14:00", "They return and work time starts again.", "Clocked in", false],
-        ["Clocked out", "17:06", "Going home. The day is closed.", "Clocked out", false]
+        ["Arrive", "08:02", "An employee stands at the station.", "Face recognition"],
+        ["Scanning", "Face aligned", "The frame follows the live face. A stranger is not named.", "Tracking"],
+        ["Clocked in", "Recorded", "The match is saved for this company only.", "Clocked in"],
+        ["NFC", "Card read", "The same person can tap a registered card.", "NFC"],
+        ["QR pass", "PIN next", "The pass identifies them. Their PIN confirms the punch.", "QR + PIN"],
+        ["Clocked out", "17:06", "The day closes on the same attendance record.", "Clocked out"]
+      ];
+      const stages = [
+        ["01 — Biometric registration", "360° facial capture", "The owner registers a face with consent. The camera stays visible. Landmarks follow the jaw, eyes, nose and mouth. Five angles build the template.", true],
+        ["02 — NFC identification", "Tap a registered card", "The card carries a random link. The station reads it and asks the employee to confirm clock-in or clock-out.", false],
+        ["03 — Clock in and out", "Attendance recorded", "The station shows the time and a clear success state. The punch is the record, whichever method they used.", false],
+        ["04 — Workforce view", "Hours and activity", "The owner sees who is in, out, late or absent, then working hours and overtime from those punches.", false]
       ];
       const nav = document.querySelector("#demo-nav");
+      const stageNav = document.querySelector("#stage-nav");
       let index = 0;
+      let stageIndex = 0;
       frames.forEach((frame, frameIndex) => {
         const button = document.createElement("button");
         button.type = "button";
         button.textContent = frame[0];
         button.onclick = () => show(frameIndex);
         nav.appendChild(button);
+      });
+      stages.forEach((frame, frameIndex) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = frame[0].slice(0, 2);
+        button.onclick = () => showStage(frameIndex);
+        stageNav.appendChild(button);
       });
       function show(next) {
         index = next;
@@ -152,11 +186,25 @@ export function landingPage() {
         document.querySelector("#demo-title").textContent = frame[1];
         document.querySelector("#demo-body").textContent = frame[2];
         document.querySelector("#demo-chip").textContent = frame[3];
-        document.querySelector("#demo-scan").hidden = !frame[4];
         [...nav.children].forEach((button, buttonIndex) => button.classList.toggle("on", buttonIndex === index));
       }
+      function showStage(next) {
+        stageIndex = next;
+        const frame = stages[stageIndex];
+        document.querySelector("#stage-kicker").textContent = frame[0];
+        document.querySelector("#stage-title").textContent = frame[1];
+        document.querySelector("#stage-body").textContent = frame[2];
+        document.querySelector("#stage-scan").hidden = !frame[3];
+        [...stageNav.children].forEach((button, buttonIndex) => button.classList.toggle("on", buttonIndex === stageIndex));
+      }
+      function paintClock() {
+        document.querySelector("#hero-clock").textContent = new Intl.DateTimeFormat("en-ZA", { hour: "2-digit", minute: "2-digit" }).format(new Date());
+      }
       show(0);
-      setInterval(() => show((index + 1) % frames.length), 2400);
+      showStage(0);
+      paintClock();
+      setInterval(() => show((index + 1) % frames.length), 2600);
+      setInterval(paintClock, 1000);
     </script>
   </body></html>`;
 }
@@ -167,8 +215,9 @@ export function signupPage({ error = "", values = {} } = {}) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Register your business</title><style>${publicStyle}</style></head><body>
     <header class="top"><a class="brand" href="/">TRY CLOCK IN</a><nav><a href="/login">Business login</a></nav></header>
     <main>
+      <p class="kicker">Business verification</p>
       <h1>Register your business</h1>
-      <p class="lead">This form is for the owner or an authorised representative. Employees are added after the business is approved.</p>
+      <p class="lead">Only the owner, or a person with authority to represent the business, can open a workspace. Employees are added after approval. Clocking stays off until the documents are reviewed.</p>
       ${error ? `<p class="error">${escapeHtml(error)}</p>` : ""}
       <form method="post" action="/signup" enctype="multipart/form-data">
         <h2>Business</h2>

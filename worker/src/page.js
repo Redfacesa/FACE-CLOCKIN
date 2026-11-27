@@ -9,48 +9,49 @@ export function kioskPage(code) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Clock in</title>
   <style>
-    :root { color-scheme: dark; --red:#9f1d2d; --muted:#b7b1ab; --line:rgba(255,255,255,.1); }
+    :root { color-scheme: dark; --red:#9f1d2d; --muted:#b7b1ab; --line:rgba(255,255,255,.12); }
     * { box-sizing: border-box; }
-    body { margin:0; min-height:100vh; color:#f6f4f2; font-family:"Avenir Next","Segoe UI",sans-serif; background:radial-gradient(900px 420px at 50% -10%, rgba(159,29,45,.35), transparent 60%), #0c0c0e; }
-    main { max-width:880px; margin:0 auto; padding:48px 24px 64px; }
+    body { margin:0; min-height:100vh; color:#f6f4f2; font-family:"Avenir Next","Segoe UI",sans-serif; background:radial-gradient(900px 420px at 50% -10%, rgba(159,29,45,.38), transparent 58%), #0c0c0e; }
+    main { max-width:920px; margin:0 auto; padding:28px 20px 64px; }
+    .topbar { display:flex; justify-content:space-between; align-items:center; gap:12px; }
     .mark { letter-spacing:.22em; font-size:13px; margin:0; }
-    .sub { letter-spacing:.28em; color:var(--red); font-size:12px; }
-    h1 { font-size:clamp(40px, 7vw, 72px); line-height:.92; margin:18px 0 0; font-weight:560; letter-spacing:-.045em; }
-    .time { font-size:clamp(56px, 10vw, 96px); margin:12px 0; letter-spacing:-.05em; }
+    .sub { letter-spacing:.28em; color:var(--red); font-size:12px; margin:4px 0 0; }
+    .ready { display:inline-flex; align-items:center; gap:8px; border:1px solid var(--line); border-radius:999px; padding:8px 12px; letter-spacing:.12em; font-size:12px; color:var(--muted); }
+    .pulse { width:8px; height:8px; border-radius:50%; background:#3ddc84; box-shadow:0 0 12px #3ddc84; }
+    h1 { font-size:clamp(36px, 6vw, 64px); line-height:.92; margin:12px 0 0; font-weight:560; letter-spacing:-.045em; }
+    .time { font-size:clamp(64px, 12vw, 112px); margin:8px 0; letter-spacing:-.06em; font-weight:560; }
     .muted { color:var(--muted); }
-    .actions { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:32px; }
-    .actions-main { grid-template-columns:1fr; max-width:520px; }
-    .actions-main button { padding:28px 24px; }
-    .link-row { display:flex; gap:18px; margin-top:8px; }
-    button.text { background:none; border:0; padding:8px 0; color:var(--muted); width:auto; }
-    .people { display:grid; gap:10px; } .people button span { color:var(--muted); }
-    button { font:inherit; color:inherit; background:rgba(255,255,255,.04); border:1px solid var(--line); border-radius:22px; padding:22px; text-align:left; backdrop-filter:blur(16px); }
-    button strong { display:block; font-size:22px; margin-bottom:4px; }
+    .actions { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-top:22px; }
+    button { font:inherit; color:inherit; background:rgba(255,255,255,.045); border:1px solid var(--line); border-radius:24px; padding:22px; text-align:left; backdrop-filter:blur(16px); min-height:132px; }
+    button span { color:var(--muted); display:block; margin-top:6px; }
+    button strong { display:block; font-size:26px; letter-spacing:-.03em; }
     button.primary { background:var(--red); border-color:transparent; }
+    button.primary span { color:rgba(255,255,255,.82); }
+    button.text { background:none; border:0; min-height:0; padding:14px 0; color:var(--muted); width:auto; }
     .panel { margin-top:22px; } .hidden { display:none; }
     #face-panel { margin-top:8px; }
-    #face-back { margin-top:16px; width:auto; }
-    .foot { margin-top:40px; color:var(--muted); letter-spacing:.08em; font-size:13px; }
+    #face-back { margin-top:16px; width:auto; min-height:0; }
+    video.qr-cam { width:100%; max-height:360px; border-radius:24px; background:#111; object-fit:cover; }
+    .foot { margin-top:36px; color:var(--muted); letter-spacing:.08em; font-size:13px; }
     input { width:100%; font:inherit; padding:14px; border-radius:14px; border:1px solid var(--line); background:rgba(0,0,0,.35); color:white; }
     .error { color:#f0c2c6; }
-    @media (max-width:700px) { main { padding:28px 16px 48px; } .actions { grid-template-columns:1fr; } }
+    @media (max-width:700px) { main { padding:20px 14px 40px; } .actions { grid-template-columns:1fr; } button { min-height:96px; } }
   </style>
 </head>
 <body>
   <main>
-    <p class="mark">REDFACE</p>
-    <p class="sub">WORKFORCE</p>
+    <div class="topbar"><div><p class="mark">TRY CLOCK IN</p><p class="sub">CLOCKING</p></div><p class="ready"><span class="pulse"></span> SYSTEM READY</p></div>
     <section id="home">
-      <p class="muted" id="mode">CLOCK IN</p>
       <p class="muted" id="online">Station online</p>
       <div class="time" id="clock">--:--</div>
       <p id="date">—</p>
-      <p>Look at the camera, or tap your tag.</p>
-      <div class="actions actions-main">
-        <button class="primary" id="face" type="button"><strong>Face recognition</strong><span>Look at the camera</span></button>
-        <button id="nfc" type="button"><strong>Tags</strong><span>Tap your card</span></button>
+      <p>Look at the camera, tap a card, or scan your QR pass.</p>
+      <div class="actions">
+        <button class="primary" id="face" type="button"><strong>Face</strong><span>Look here</span></button>
+        <button id="nfc" type="button"><strong>NFC</strong><span>Tap your card</span></button>
+        <button id="qr" type="button"><strong>QR pass</strong><span>Scan, then PIN</span></button>
       </div>
-      <p class="link-row"><button class="text" id="pin" type="button">Number and PIN</button><button class="text" id="qr" type="button">QR code</button></p>
+      <p><button class="text" id="pin" type="button">Employee number and PIN</button></p>
       <p class="error" id="home-error"></p>
     </section>
     <section id="flow" class="panel hidden"></section>
@@ -74,7 +75,8 @@ export function kioskPage(code) {
     function showFlow(html) { home.classList.add("hidden"); facePanel.classList.add("hidden"); flow.classList.remove("hidden"); flow.innerHTML = html; }
     function showFaceFailure(message) {
       const text = String(message || "Face not recognised.").replace(/[<>]/g, "");
-      showFlow('<p class="muted">Recognition failed</p><h1>' + text + '</h1><p>Please try again or use another clocking method.</p><div class="actions"><button type="button" id="fail-nfc"><strong>NFC card</strong><span>Tap a registered card</span></button><button type="button" id="fail-pin"><strong>Employee PIN</strong><span>Number and personal PIN</span></button></div><p><button class="primary" type="button" id="fail-face">Try face again</button></p>');
+      showFlow('<p class="muted">Recognition failed</p><h1>' + text + '</h1><p>Please try again or use another clocking method.</p><div class="actions"><button type="button" id="fail-nfc"><strong>NFC</strong><span>Tap a registered card</span></button><button type="button" id="fail-qr"><strong>QR pass</strong><span>Scan, then PIN</span></button><button type="button" id="fail-pin"><strong>PIN</strong><span>Number and personal PIN</span></button></div><p><button class="primary" type="button" id="fail-face">Try face again</button></p>');
+      document.querySelector("#fail-qr").onclick = startQr;
       document.querySelector("#fail-nfc").onclick = startNfc;
       document.querySelector("#fail-pin").onclick = startPin;
       document.querySelector("#fail-face").onclick = startFace;
@@ -136,23 +138,63 @@ export function kioskPage(code) {
       } catch (error) { document.querySelector("#err").textContent = error.message; }
     }
 
+    function askQrPin(token, name) {
+      const safe = String(name || "there").replace(/[<>]/g, "");
+      showFlow('<p class="muted">QR identified</p><h1>' + safe + '</h1><p>The pass only identifies them. Enter their PIN to record attendance.</p><form id="qr-pin"><label>PIN<input name="pin" inputmode="numeric" required minlength="4" maxlength="6"></label><p><button class="primary" type="submit">Confirm punch</button> <button id="back" type="button">Back</button></p><p class="error" id="err"></p></form>');
+      document.querySelector("#back").onclick = () => { stopQr(); showHome(); };
+      document.querySelector("#qr-pin").onsubmit = async (event) => {
+        event.preventDefault();
+        const pin = new FormData(event.target).get("pin");
+        try {
+          const identified = await api("/api/identify", { method: "qr", stationId: state.station.id, token });
+          render(await api("/api/clock", { method: "qr", stationId: state.station.id, token, pin, action: identified.suggestedAction }));
+        } catch (error) { document.querySelector("#err").textContent = error.message; }
+      };
+    }
+
+    let qrStream = null;
+    function stopQr() {
+      if (qrStream) qrStream.getTracks().forEach((track) => track.stop());
+      qrStream = null;
+    }
+
     async function startQr() {
-      const response = await fetch("/api/kiosk/people?code=" + encodeURIComponent(stationCode));
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "The employee list is unavailable.");
-      const esc = (value) => String(value ?? "").replace(/[&<>]/g, (char) => char === "&" ? "&amp;" : char === "<" ? "&lt;" : "&gt;");
-      const buttons = payload.people.map((person) => '<button type="button" data-id="' + esc(person.id) + '"><strong>' + esc(person.firstName) + " " + esc(person.lastName) + "</strong><span>" + esc(person.employeeNumber) + "</span></button>").join("");
-      showFlow('<h1>QR code</h1><p>Choose your name. Scan the code with your phone and enter your PIN there.</p><div class="people">' + buttons + '</div><p><button id="back" type="button">Back</button></p><p class="error" id="err"></p>');
-      document.querySelector("#back").onclick = showHome;
-      document.querySelectorAll("[data-id]").forEach((button) => {
-        button.onclick = async () => {
+      stopQr();
+      showFlow('<p class="muted">QR pass</p><h1>Scan the employee pass</h1><p>Hold the personal QR in front of this camera. A screenshot still needs that employee’s PIN.</p><video class="qr-cam" id="qr-cam" autoplay muted playsinline></video><p id="qr-state"></p><p class="error" id="err"></p><p><button id="back" type="button">Back</button></p>');
+      document.querySelector("#back").onclick = () => { stopQr(); showHome(); };
+      const stateNode = document.querySelector("#qr-state");
+      if (!("BarcodeDetector" in window)) {
+        stateNode.textContent = "This browser cannot scan a QR code. Use Face, NFC, or PIN on this device.";
+        return;
+      }
+      try {
+        qrStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        const video = document.querySelector("#qr-cam");
+        video.srcObject = qrStream;
+        const detector = new BarcodeDetector({ formats: ["qr_code"] });
+        let busy = false;
+        const loop = async () => {
+          if (!qrStream || busy) return;
+          busy = true;
           try {
-            const issued = await api("/api/qr", { employeeId: button.dataset.id, stationId: state.station.id });
-            showFlow('<h1>Scan this code</h1>' + issued.svg + '<p>On your phone, confirm clock-in and enter your PIN.</p><p><button id="back" type="button">Back</button></p>');
-            document.querySelector("#back").onclick = showHome;
-          } catch (error) { document.querySelector("#err").textContent = error.message; }
+            const codes = await detector.detect(video);
+            const raw = codes[0]?.rawValue || "";
+            if (raw) {
+              stopQr();
+              const identified = await api("/api/identify", { method: "qr", stationId: state.station.id, token: raw });
+              askQrPin(raw, identified.employee.firstName);
+              return;
+            }
+          } catch (error) {
+            if (document.querySelector("#err")) document.querySelector("#err").textContent = error.message;
+          }
+          busy = false;
+          if (qrStream) requestAnimationFrame(loop);
         };
-      });
+        video.onloadedmetadata = () => loop();
+      } catch (error) {
+        stateNode.textContent = error.message;
+      }
     }
 
     function startFace() {

@@ -35,6 +35,9 @@ export function faceCapture({ heading, detail, mode, postUrl }) {
       #face-box .check input { width:auto; margin-top:3px; }
       #face-box .scan-layout { display:grid; grid-template-columns: minmax(0, 1.35fr) minmax(220px, .75fr); gap: 28px; align-items: center; margin-top: 22px; }
       #face-box .scan-frame { position: relative; width: 100%; aspect-ratio: 4/3; border-radius: 28px; overflow: hidden; background: #141414; box-shadow: inset 0 0 0 1px rgba(255,255,255,.14); }
+      #face-box .scan-frame:before, #face-box .scan-frame:after { content:""; position:absolute; width:28px; height:28px; z-index:4; pointer-events:none; border:2px solid var(--scan); }
+      #face-box .scan-frame:before { top:14px; left:14px; border-right:0; border-bottom:0; }
+      #face-box .scan-frame:after { right:14px; bottom:14px; border-left:0; border-top:0; }
       #face-box .scan-frame video { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; transform:scaleX(-1); background:#141414; z-index:0; }
       #face-box .scan-frame canvas { position:absolute; inset:0; width:100%; height:100%; background:transparent; transform:scaleX(-1); pointer-events:none; z-index:1; }
       #face-box .scan-bar { position:absolute; left:8%; right:8%; height:2px; z-index:2; pointer-events:none; opacity:0; background:linear-gradient(90deg, transparent, var(--scan), transparent); box-shadow:0 0 16px var(--scan); }

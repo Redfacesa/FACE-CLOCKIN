@@ -160,8 +160,29 @@ export function employeePage({ user, employee, credentials = [], history = [], f
         };
       </script>`
     : "";
-  const issuedBlock = issued
-    ? `<section class="card"><h2>${issued.method === "nfc" ? "Write NFC card" : "Employee QR"}</h2><p>This credential is shown once. It contains no personal details.</p><p class="mono">${escapeHtml(issued.url)}</p>${issued.svg ?? ""}${writeScript}</section>`
+  const qrCredential = credentials.find((item) => item.method === "qr" && item.status === "active");
+  const pass = issued?.method === "qr"
+    ? `<div class="pass" id="employee-pass"><p class="eyebrow">TRY CLOCK IN</p><p class="live">ACTIVE</p><h2>${escapeHtml(employee.first_name)} ${escapeHtml(employee.last_name)}</h2><p>EMPLOYEE ID ${escapeHtml(employee.employee_number)}</p><p>${escapeHtml(user.company_name)}</p><div class="qr">${issued.svg}</div><p class="muted">Personal employee QR. Linked to this profile. It contains a random token, not their ID number.</p></div>
+      <p class="row"><button class="button" type="button" id="save-pass">Save image</button><button class="button quiet" type="button" id="print-pass">Print ID</button></p>
+      <script>
+        document.querySelector("#save-pass").onclick = () => {
+          const svg = document.querySelector("#employee-pass svg");
+          const blob = new Blob([svg.outerHTML], { type: "image/svg+xml" });
+          const link = document.createElement("a");
+          link.href = URL.createObjectURL(blob);
+          link.download = "employee-pass.svg";
+          link.click();
+        };
+        document.querySelector("#print-pass").onclick = () => {
+          const card = document.querySelector("#employee-pass").outerHTML;
+          const page = window.open("", "_blank");
+          page.document.write('<!doctype html><title>Employee pass</title><body style="font-family:sans-serif;background:#111;color:#fff;padding:32px">' + card + '<script>print()<' + '/script></body>');
+          page.document.close();
+        };
+      </script>`
+    : `<p>${qrCredential ? "A QR pass is active. The picture is not stored again. Regenerating replaces it, and the old picture stops working." : "No QR pass yet. Issuing one creates a random code for this employee."}</p>`;
+  const issuedBlock = issued?.method === "nfc"
+    ? `<section class="card"><h2>Write NFC card</h2><p>This card is shown once. It contains no personal details.</p><p class="mono">${escapeHtml(issued.url)}</p>${writeScript}</section>`
     : "";
   return app(user, employee.first_name, `
     <header class="head"><div><p class="eyebrow"><a href="/app/employees/${employee.id}">${escapeHtml(employee.employee_number ?? "")}</a></p><h1>${escapeHtml(employee.first_name)} ${escapeHtml(employee.last_name)}</h1><p class="muted">${escapeHtml(employee.role_title)} · ${escapeHtml(employee.phone || "No phone")} · ${escapeHtml(employee.email || "No email")}</p></div></header>
@@ -173,7 +194,7 @@ export function employeePage({ user, employee, credentials = [], history = [], f
       <p>${added ? `${escapeHtml(employee.first_name)} is ${escapeHtml(employee.employee_number)}. The next step is their face. Tick consent, press start, and let them follow the words beside the camera.` : faceReady ? "They can clock in at the station by looking at the camera. A tag or PIN below is the backup." : "Tick consent, press start, and let them follow the words beside the camera. A tag or PIN below works when there is no camera."}</p>
     </section>
     <section class="card"><h2>Profile</h2>
-      <p>Facial recognition: ${faceReady ? "Registered" : "Not registered"} · PIN ${active("pin") || employee.has_pin ? "set" : "not set"} · NFC ${active("nfc") ? "linked" : "not issued"}</p>
+      <p>Facial recognition: ${faceReady ? "Registered" : "Not registered"} · PIN ${active("pin") || employee.has_pin ? "set" : "not set"} · NFC ${active("nfc") ? "linked" : "not issued"} · QR pass ${active("qr") || issued?.method === "qr" ? "active" : "not issued"}</p>
       ${faceReady ? `<form method="post" action="/app/employees/${employee.id}/face/delete"><button class="button quiet" type="submit">Delete facial template</button></form>` : ""}
     </section>
     ${faceCapture({
@@ -186,10 +207,15 @@ export function employeePage({ user, employee, credentials = [], history = [], f
     <section class="card"><h2>Attendance</h2>
       <table>${history.map((event) => `<tr><td>${escapeHtml(event.work_date)}</td><td>${escapeHtml(event.timeLabel)}</td><td>${escapeHtml(event.event_type === "CLOCK_IN" ? "In" : "Out")}</td><td>${escapeHtml(event.method)}</td></tr>`).join("") || "<tr><td>No attendance yet.</td></tr>"}</table>
     </section>
+    <section class="card"><p class="eyebrow">Employee digital ID</p><h2>QR identity pass</h2>
+      ${pass}
+      <p class="muted">The pass identifies ${escapeHtml(employee.first_name)}. The station still asks for their PIN before it records clock-in or clock-out. A shared screenshot cannot punch by itself.</p>
+      <form method="post" action="/app/employees/${employee.id}/qr"><button class="button" type="submit">${qrCredential || issued?.method === "qr" ? "Regenerate QR pass" : "Issue QR pass"}</button></form>
+      ${qrCredential ? `<form method="post" action="/app/credentials/${qrCredential.id}/revoke"><button class="button quiet" type="submit">Revoke QR pass</button></form>` : ""}
+    </section>
     <section class="card"><h2>Tag or PIN</h2>
-      <p>Use these when the camera is not available. Tag: ${active("nfc") ? "ready" : "not written yet"}. PIN: ${active("pin") || employee.has_pin ? "set" : "not set yet"}.</p>
+      <p>Use these when the camera is not available. Tag: ${active("nfc") ? "ready" : "not written yet"}. PIN: ${active("pin") || employee.has_pin ? "set" : "not set yet"}. A QR pass needs this PIN.</p>
       <form method="post" action="/app/employees/${employee.id}/nfc"><button class="button" type="submit">Issue NFC card</button></form>
-      <form method="post" action="/app/employees/${employee.id}/qr"><button class="button" type="submit">Generate QR credential</button></form>
       <form method="post" action="/app/employees/${employee.id}/pin"><label>New PIN<input name="pin" required minlength="4" maxlength="6" inputmode="numeric"></label><button class="button" type="submit">Save PIN</button></form>
       <form method="post" action="/app/employees/${employee.id}/documents" enctype="multipart/form-data"><label>Document<input type="file" name="file" required></label><button class="button quiet" type="submit">Upload</button></form>
     </section>`);
@@ -361,7 +387,18 @@ function shell(title, body) {
     .plans { display:grid; gap:8px; } .choice { display:flex; gap:10px; align-items:center; } .mono { font-family: ui-monospace, monospace; word-break:break-all; }
     .preview { width:100%; height:640px; border:1px solid var(--line); border-radius:22px; background:#0d0d0d; }
     fieldset { border:1px solid var(--line); border-radius:16px; padding:16px; } .legal { color:var(--muted); font-size:12px; padding:8px 28px 28px; }
-    @media (max-width:900px) { .app, .stats, .split, .stations { grid-template-columns:1fr; } main { padding:24px 16px 56px; } .card { padding:20px; } aside { border-right:0; border-bottom:1px solid var(--line); } }
+    .pass { border:1px solid var(--line); border-radius:28px; padding:22px; background:linear-gradient(180deg, rgba(159,29,45,.28), rgba(255,255,255,.03)); }
+    .pass .live { letter-spacing:.18em; color:#3ddc84; font-size:12px; }
+    .pass .qr svg { background:#fff; border-radius:16px; padding:8px; }
+    @media (max-width:900px) {
+      .app, .stats, .split, .stations { grid-template-columns:1fr; }
+      main { padding:20px 14px 48px; }
+      .card { padding:18px; border-radius:24px; }
+      aside { border-right:0; border-bottom:1px solid var(--line); }
+      aside nav { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+      aside a { background:rgba(255,255,255,.04); border:1px solid var(--line); border-radius:18px; padding:16px 12px; min-height:72px; }
+      .stats { grid-template-columns:1fr 1fr; }
+    }
   </style></head><body>${body}<p class="legal">© Red Face (Pty) Ltd. Licensed software.</p></body></html>`;
 }
 
