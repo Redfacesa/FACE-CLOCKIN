@@ -15,11 +15,17 @@ export async function signSession(secret, session) {
 }
 
 export async function readSession(request, secret) {
-  if (!secret) return null;
-  const header = request.headers.get("cookie") ?? "";
-  const pair = header.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${COOKIE}=`));
-  if (!pair) return null;
-  const token = decodeURIComponent(pair.slice(COOKIE.length + 1));
+  return readCookie(request, secret, COOKIE);
+}
+
+export async function readAdminSession(request, secret) {
+  const session = await readCookie(request, secret, "rf_admin");
+  if (session?.role !== "platform") return null;
+  return session;
+}
+
+export async function openToken(secret, token) {
+  if (!secret || !token) return null;
   const dot = token.lastIndexOf(".");
   if (dot <= 0) return null;
   const body = token.slice(0, dot);
@@ -27,21 +33,30 @@ export async function readSession(request, secret) {
   const expected = await hmac(secret, body);
   if (expected.length !== signature.length) return null;
   let difference = 0;
-  for (let index = 0; index < expected.length; index += 1) {
-    difference |= expected.charCodeAt(index) ^ signature.charCodeAt(index);
-  }
+  for (let index = 0; index < expected.length; index += 1) difference |= expected.charCodeAt(index) ^ signature.charCodeAt(index);
   if (difference !== 0) return null;
   try {
     const session = JSON.parse(new TextDecoder().decode(base64UrlToBytes(body)));
-    if (!session?.uid || !session.companyId || !session.exp || session.exp < Date.now()) return null;
+    if (!session?.uid || !session.exp || session.exp < Date.now()) return null;
     return session;
   } catch {
     return null;
   }
 }
 
+async function readCookie(request, secret, name) {
+  const header = request.headers.get("cookie") ?? "";
+  const pair = header.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${name}=`));
+  if (!pair) return null;
+  return openToken(secret, decodeURIComponent(pair.slice(name.length + 1)));
+}
+
 export function sessionCookie(token) {
   return `${COOKIE}=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=43200`;
+}
+
+export function adminCookie(token) {
+  return `rf_admin=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=43200`;
 }
 
 export function clearCookie() {

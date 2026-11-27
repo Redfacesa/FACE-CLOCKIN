@@ -17,8 +17,8 @@ export async function sendVerificationEmail(env, { to, companyName, link }) {
     "Verification link:",
     link,
     "",
-    "Opening the link verifies this email address. It does not activate the workspace.",
-    "After verification, activate the workspace on the next screen. Sign-in is available only after both steps.",
+    "Opening the link confirms this email address. It does not open the workspace.",
+    "Sign in after that to see the application status. Employee clocking stays off until Try Clock In approves the business.",
     "",
     "Red Face (Pty) Ltd",
   ].join("\r\n");
@@ -28,6 +28,62 @@ export async function sendVerificationEmail(env, { to, companyName, link }) {
     from: `Red Face Workforce <${user}>`,
     to,
     subject: "Verify your Red Face Workforce email",
+    text,
+  });
+}
+
+export async function sendSignupAlert(env, { companyName, ownerName, email, businessType, reviewLink }) {
+  const user = env.SMTP_USER || "info@redface.co.za";
+  const password = env.SMTP_PASSWORD;
+  if (!password) return;
+  const text = [
+    "A business submitted a Try Clock In application.",
+    "",
+    `Business: ${companyName}`,
+    `Owner: ${ownerName}`,
+    `Email: ${email}`,
+    `Type: ${businessType === "sole" ? "Sole proprietor" : "CIPC company"}`,
+    "",
+    "Review and approve:",
+    reviewLink,
+    "",
+    "Red Face (Pty) Ltd",
+  ].join("\r\n");
+  await smtpSend({
+    user,
+    password,
+    from: `Red Face Workforce <${user}>`,
+    to: "info@redface.co.za",
+    subject: `New business application: ${companyName}`,
+    text,
+  });
+}
+
+export async function sendAdminLink(env, { link }) {
+  const user = env.SMTP_USER || "info@redface.co.za";
+  const password = env.SMTP_PASSWORD;
+  if (!password) {
+    const error = new Error("Email sending is not configured.");
+    error.status = 503;
+    error.code = "mail_unconfigured";
+    throw error;
+  }
+  const text = [
+    "Open the Try Clock In admin platform.",
+    "",
+    "This link signs in info@redface.co.za for 30 minutes:",
+    link,
+    "",
+    "If you did not ask for this, ignore the email.",
+    "",
+    "Red Face (Pty) Ltd",
+  ].join("\r\n");
+  await smtpSend({
+    user,
+    password,
+    from: `Red Face Workforce <${user}>`,
+    to: "info@redface.co.za",
+    subject: "Try Clock In admin sign-in",
     text,
   });
 }

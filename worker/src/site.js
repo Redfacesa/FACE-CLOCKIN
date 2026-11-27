@@ -35,7 +35,33 @@ const publicStyle = `
   fieldset { border:1px solid var(--line); border-radius:16px; }
   .error { color:#9f1d2d; }
   .foot { color:var(--muted); font-size:13px; padding:24px 7vw 32px; }
-  @media (max-width:800px) { .hero, .grid, .price { grid-template-columns:1fr; } header.top, nav { flex-wrap:wrap; } }
+  .tiles { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:28px; }
+  .tiles article { min-height:128px; border-radius:24px; padding:18px; background:#1c1c1c; color:#fff; }
+  .tiles article:nth-child(1) { background:#9f1d2d; }
+  .tiles span { display:block; color:rgba(255,255,255,.72); font-size:13px; letter-spacing:.08em; text-transform:uppercase; }
+  .tiles strong { display:block; font-size:22px; margin-top:18px; }
+  .demo { background:#111; color:#fff; border-radius:32px; padding:18px; max-width:420px; }
+  .demo-screen { min-height:340px; border-radius:24px; padding:22px; background:#1b1b1b; position:relative; overflow:hidden; }
+  .demo-screen .scan { position:absolute; left:12%; right:12%; height:2px; background:#fff; animation:scan 1.8s ease-in-out infinite alternate; }
+  .demo-kicker { letter-spacing:.14em; text-transform:uppercase; font-size:12px; color:#d7d2cc; }
+  .demo-screen h3 { font-size:40px; letter-spacing:-.04em; margin:16px 0; }
+  .chip { display:inline-block; margin-top:18px; border:1px solid rgba(255,255,255,.3); border-radius:999px; padding:8px 12px; }
+  .demo-nav { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-top:12px; }
+  .demo-nav button { font:inherit; color:#fff; background:#242424; border:0; border-radius:16px; padding:12px 8px; }
+  .demo-nav button.on { background:#9f1d2d; }
+  .review-actions { display:grid; gap:8px; }
+  .review-actions .btn { text-align:center; }
+  @keyframes scan { from { top:18%; } to { top:72%; } }
+  @media (max-width:800px) {
+    header.top { position:sticky; top:0; background:#fff; z-index:2; padding:16px; }
+    nav { width:100%; }
+    main { padding:0 16px 40px; }
+    .hero, .grid, .price { grid-template-columns:1fr; gap:18px; }
+    .hero { padding:28px 0 12px; }
+    h1 { font-size:40px; }
+    .card, .price article, .demo { border-radius:24px; }
+    .btn { width:100%; text-align:center; }
+  }
 `;
 
 export function landingPage() {
@@ -49,8 +75,23 @@ export function landingPage() {
           <p class="lead">Try Clock In helps businesses manage employee attendance, face recognition, NFC tags, shift schedules and working hours from one platform.</p>
           <p><a class="btn" href="/signup">Register your business</a></p>
           <p>Already registered? <a href="/login">Business login</a></p>
+          <div class="tiles">
+            <article><span>Clock in</span><strong>Face</strong></article>
+            <article><span>Backup</span><strong>Tags</strong></article>
+            <article><span>Owner</span><strong>People</strong></article>
+            <article><span>Hours</span><strong>Reports</strong></article>
+          </div>
         </div>
-        <div class="phone"><p>Clock in</p><strong>Face recognition</strong><p>Look at the camera. The station names the employee only after a match.</p><p>Tags are the other way in. A PIN is there when the camera cannot be used.</p></div>
+        <div class="demo" id="demo">
+          <div class="demo-screen">
+            <div class="scan" id="demo-scan" hidden></div>
+            <p class="demo-kicker" id="demo-kicker">Demonstration</p>
+            <h3 id="demo-title">08:02</h3>
+            <p id="demo-body">An employee arrives at the door.</p>
+            <span class="chip" id="demo-chip">Face recognition</span>
+          </div>
+          <div class="demo-nav" id="demo-nav"></div>
+        </div>
       </section>
       <section class="section" id="how">
         <h2>How people clock in</h2>
@@ -62,11 +103,8 @@ export function landingPage() {
         </div>
       </section>
       <section class="section">
-        <h2>A working day</h2>
-        <div class="step"><strong>1</strong><span>The employee arrives and clocks in with a face or a tag.</span></div>
-        <div class="step"><strong>2</strong><span>Lunch is a separate start and end, not paid time unless the company says so.</span></div>
-        <div class="step"><strong>3</strong><span>They return and the day continues.</span></div>
-        <div class="step"><strong>4</strong><span>Clocking out asks why they are leaving and closes the day.</span></div>
+        <h2>Watch a day</h2>
+        <p class="lead">This is a demonstration, not a live clocking record. Tap a step or let it play.</p>
       </section>
       <section class="section" id="pricing">
         <h2>Pricing</h2>
@@ -89,6 +127,37 @@ export function landingPage() {
       </section>
     </main>
     <p class="foot">© Red Face (Pty) Ltd. Licensed software.</p>
+    <script>
+      const frames = [
+        ["Arrive", "08:02", "An employee arrives at the door.", "Face recognition", false],
+        ["Scanning", "Face aligned", "The frame follows the live face. A stranger is not named.", "Tracking", true],
+        ["Clocked in", "Welcome", "The match is saved for this company only.", "Clocked in", false],
+        ["Lunch", "13:00", "Lunch starts. That time is not counted as overtime.", "On lunch", false],
+        ["Back", "14:00", "They return and work time starts again.", "Clocked in", false],
+        ["Clocked out", "17:06", "Going home. The day is closed.", "Clocked out", false]
+      ];
+      const nav = document.querySelector("#demo-nav");
+      let index = 0;
+      frames.forEach((frame, frameIndex) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = frame[0];
+        button.onclick = () => show(frameIndex);
+        nav.appendChild(button);
+      });
+      function show(next) {
+        index = next;
+        const frame = frames[index];
+        document.querySelector("#demo-kicker").textContent = frame[0];
+        document.querySelector("#demo-title").textContent = frame[1];
+        document.querySelector("#demo-body").textContent = frame[2];
+        document.querySelector("#demo-chip").textContent = frame[3];
+        document.querySelector("#demo-scan").hidden = !frame[4];
+        [...nav.children].forEach((button, buttonIndex) => button.classList.toggle("on", buttonIndex === index));
+      }
+      show(0);
+      setInterval(() => show((index + 1) % frames.length), 2400);
+    </script>
   </body></html>`;
 }
 
@@ -162,6 +231,19 @@ export function holdPage({ user, documents = [] }) {
   </body></html>`;
 }
 
+export function adminGate({ sent = false, error = "" } = {}) {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Admin</title><style>${publicStyle}</style></head><body>
+    <header class="top"><a class="brand" href="/">TRY CLOCK IN</a></header>
+    <main>
+      <h1>Admin</h1>
+      <p class="lead">Approvals are sent to info@redface.co.za. Open the email on this phone and the review screen opens.</p>
+      ${sent ? `<p>The sign-in link is on its way to info@redface.co.za.</p>` : ""}
+      ${error ? `<p class="error">${escapeHtml(error)}</p>` : ""}
+      <form method="post" action="/admin/login"><button class="btn" type="submit">Email the admin link</button></form>
+    </main>
+  </body></html>`;
+}
+
 export function reviewPage({ applications, documentsByCompany, error = "" }) {
   const cards = applications.filter((item) => item.status !== "active").map((item) => {
     const docs = documentsByCompany[item.id] ?? [];
@@ -172,10 +254,10 @@ export function reviewPage({ applications, documentsByCompany, error = "" }) {
       <ul>${docs.map((doc) => `<li><a href="/admin/documents/${doc.id}">${escapeHtml(doc.kind)} · ${escapeHtml(doc.filename)}</a></li>`).join("") || "<li>No documents</li>"}</ul>
       <form method="post" action="/admin/companies/${item.id}">
         <label>Note<textarea name="note"></textarea></label>
-        <p><button class="btn" name="action" value="approve">Approve</button>
+        <div class="review-actions"><button class="btn" name="action" value="approve">Approve</button>
         <button class="btn quiet" name="action" value="request">Request documents</button>
         <button class="btn quiet" name="action" value="reject">Reject</button>
-        ${item.status === "active" ? "" : `<button class="btn quiet" name="action" value="suspend">Suspend</button>`}</p>
+        <button class="btn quiet" name="action" value="suspend">Suspend</button></div>
       </form></article>`;
   }).join("");
   const live = applications.filter((item) => item.status === "active").map((item) => `<li>${escapeHtml(item.name)} <form style="display:inline" method="post" action="/admin/companies/${item.id}"><button name="action" value="suspend">Suspend</button></form></li>`).join("");

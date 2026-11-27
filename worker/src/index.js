@@ -1,6 +1,6 @@
-import { holdPage, landingPage, reviewPage, signupPage } from "./site.js";
+import { adminGate, holdPage, landingPage, reviewPage, signupPage } from "./site.js";
 import { renderSVG } from "../vendor/uqr.mjs";
-import { can, clearCookie, readSession, sessionCookie, signSession } from "./auth.js";
+import { adminCookie, can, clearCookie, openToken, readAdminSession, readSession, sessionCookie, signSession } from "./auth.js";
 import { METHODS, zonedNow, publicEmployee } from "./clock.js";
 import { randomToken } from "./crypto.js";
 import {
@@ -32,7 +32,7 @@ import {
   stationsPage,
   verifyPage,
 } from "./manage.js";
-import { sendVerificationEmail } from "./mail.js";
+import { sendAdminLink, sendSignupAlert, sendVerificationEmail } from "./mail.js";
 import { kioskPage, phoneConfirmPage, phonePage } from "./page.js";
 import { reportCsv, reportPdf } from "./payroll.js";
 import {
@@ -147,12 +147,24 @@ async function signup(request, env, url) {
     if (hasFile(form.get("authority"))) await saveBusinessDocument(env.DB, env.FILES, account.companyId, "authority", form.get("authority"));
     const token = await issueVerification(env.DB, account.uid, account.companyId);
     const link = `${url.origin}/verify/${token}`;
+    let warning = "";
     try {
       await sendVerificationEmail(env, { to: String(values.email), companyName: String(values.companyName), link });
-      return html(pendingPage({ email: String(values.email) }));
     } catch (error) {
-      return html(pendingPage({ email: String(values.email), warning: error.message || "The account was created, but the email could not be sent." }));
+      warning = error.message || "The account was created, but the verification email could not be sent.";
     }
+    try {
+      await sendSignupAlert(env, {
+        companyName: String(values.companyName),
+        ownerName: String(values.ownerName),
+        email: String(values.email),
+        businessType: values.businessType,
+        reviewLink: `${url.origin}/admin`,
+      });
+    } catch (error) {
+      warning = warning || error.message || "The application was saved, but the admin email could not be sent.";
+    }
+    return html(pendingPage({ email: String(values.email), warning }));
   } catch (error) {
     if (!error.status) throw error;
     return html(signupPage({ error: error.message, values }), error.status);
@@ -200,9 +212,35 @@ async function documentsFor(env, applications) {
 }
 
 async function platformReview(request, env, url) {
-  const user = await currentUser(env.DB, await readSession(request, env.SESSION_SECRET));
-  if (!user) return redirect("/login");
-  if (!isPlatformAdmin(env, user.email)) return new Response("Not found.", { status: 404 });
+  if (url.pathname === "/admin/login" && request.method === "POST") {
+    const token = await signSession(env.SESSION_SECRET, {
+      uid: "platform-admin",
+      companyId: "platform",
+      role: "platform",
+      email: "info@redface.co.za",
+      exp: Date.now() + 30 * 60 * 1000,
+    });
+    try {
+      await sendAdminLink(env, { link: `${url.origin}/admin/enter?token=${encodeURIComponent(token)}` });
+      return html(adminGate({ sent: true }));
+    } catch (error) {
+      return html(adminGate({ error: error.message || "The sign-in email could not be sent." }), 503);
+    }
+  }
+  if (url.pathname === "/admin/enter") {
+    const session = await openToken(env.SESSION_SECRET, url.searchParams.get("token"));
+    if (session?.role !== "platform" || session.email !== "info@redface.co.za") return html(adminGate({ error: "That sign-in link has expired. Request another." }), 401);
+    const cookieToken = await signSession(env.SESSION_SECRET, {
+      uid: "platform-admin",
+      companyId: "platform",
+      role: "platform",
+      email: "info@redface.co.za",
+      exp: Date.now() + 12 * 60 * 60 * 1000,
+    });
+    return redirect("/admin", adminCookie(cookieToken));
+  }
+  const admin = await readAdminSession(request, env.SESSION_SECRET);
+  if (!admin) return html(adminGate());
   const documentMatch = url.pathname.match(/^\/admin\/documents\/([^/]+)$/);
   if (documentMatch) {
     const document = await businessDocument(env.DB, documentMatch[1]);
@@ -221,7 +259,7 @@ async function platformReview(request, env, url) {
   if (reviewMatch && request.method === "POST") {
     const form = await request.formData();
     try {
-      await reviewCompany(env.DB, reviewMatch[1], String(form.get("action") ?? ""), user.email, form.get("note"));
+      await reviewCompany(env.DB, reviewMatch[1], String(form.get("action") ?? ""), "info@redface.co.za", form.get("note"));
       return redirect("/admin");
     } catch (error) {
       const applications = await listApplications(env.DB);
