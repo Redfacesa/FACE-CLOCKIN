@@ -82,10 +82,15 @@ export function faceCapture({ heading, detail, mode, postUrl }) {
       }
       try {
         state.textContent = "Loading the face model…";
-        const faceapi = await import("https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.15/dist/face-api.esm.js");
-        await faceapi.nets.tinyFaceDetector.loadFromUri(${JSON.stringify(MODEL)});
-        await faceapi.nets.faceLandmark68Net.loadFromUri(${JSON.stringify(MODEL)});
-        await faceapi.nets.faceRecognitionNet.loadFromUri(${JSON.stringify(MODEL)});
+        const faceapi = window.__tryFaceApi || await import("https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.15/dist/face-api.esm.js");
+        window.__tryFaceApi = faceapi;
+        if (!faceapi.nets.faceRecognitionNet.params) {
+          await Promise.all([
+            faceapi.nets.tinyFaceDetector.loadFromUri(${JSON.stringify(MODEL)}),
+            faceapi.nets.faceLandmark68Net.loadFromUri(${JSON.stringify(MODEL)}),
+            faceapi.nets.faceRecognitionNet.loadFromUri(${JSON.stringify(MODEL)}),
+          ]);
+        }
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } } });
         video.srcObject = stream;
         await video.play();
@@ -101,6 +106,7 @@ export function faceCapture({ heading, detail, mode, postUrl }) {
         let sawBlink = false;
         let latest = null;
         let flashUntil = 0;
+        let taking = false;
         const samples = [];
         const stop = () => { running = false; box.classList.remove("live"); captureButton.hidden = true; stream.getTracks().forEach((track) => track.stop()); };
         captureButton.hidden = false;
@@ -116,7 +122,7 @@ export function faceCapture({ heading, detail, mode, postUrl }) {
             } else if (Date.now() < flashUntil) {
               drawWire(latest, "#3ddc84");
             } else {
-              const faces = await faceapi.detectAllFaces(video, options).withFaceLandmarks().withFaceDescriptors();
+              const faces = await faceapi.detectAllFaces(video, options).withFaceLandmarks();
               const found = faces.length === 1 ? faces[0] : null;
               latest = found;
               const dim = found ? sceneBrightness() : 0;
@@ -156,15 +162,28 @@ export function faceCapture({ heading, detail, mode, postUrl }) {
           }
           if (running) setTimeout(watch, 280);
         };
-        function take(found, manual) {
-          if (!running || Date.now() < flashUntil) return;
+        async function take(found, manual) {
+          if (!running || taking || Date.now() < flashUntil) return;
           const name = steps[step];
           if (name === "blink" && !manual && !sawBlink) return;
+          taking = true;
+          let descriptor = null;
+          try {
+            if (!(enroll && name === "blink")) {
+              const raw = found.descriptor ?? await faceapi.computeFaceDescriptor(video, found.landmarks);
+              if (!raw) throw new Error("Hold still. The face could not be read.");
+              descriptor = Array.from(raw);
+            }
+          } catch (error) {
+            taking = false;
+            held = 0;
+            state.textContent = error.message || "Hold still. The face could not be read.";
+            return;
+          }
           const pose = headPose(found.landmarks.positions);
           if (name === "center") baseline = pose.pitch;
           if (name === "left") sideSign = Math.sign(pose.yaw) || 1;
-          if (name !== "blink") samples.push({ pose: name, descriptor: Array.from(found.descriptor) });
-          const descriptor = Array.from(found.descriptor);
+          if (descriptor && name !== "blink") samples.push({ pose: name, descriptor });
           step += 1;
           held = 0;
           sawBlink = false;
@@ -173,6 +192,7 @@ export function faceCapture({ heading, detail, mode, postUrl }) {
           state.textContent = "Capture successful.";
           mark();
           if (progress) progress.textContent = enroll ? samples.length + " / 5 angles" : "Live match";
+          taking = false;
           if (step >= steps.length) {
             captureButton.hidden = true;
             setTimeout(() => submit(enroll ? null : descriptor, samples, stop), 720);
@@ -272,13 +292,17 @@ export function faceCapture({ heading, detail, mode, postUrl }) {
         context.fill();
       }
     }
+    let lightCanvas = null;
+    let lightContext = null;
     function sceneBrightness() {
-      const sample = document.createElement("canvas");
-      sample.width = 24;
-      sample.height = 18;
-      const context = sample.getContext("2d", { willReadFrequently: true });
-      context.drawImage(video, 0, 0, 24, 18);
-      const data = context.getImageData(0, 0, 24, 18).data;
+      if (!lightCanvas) {
+        lightCanvas = document.createElement("canvas");
+        lightCanvas.width = 24;
+        lightCanvas.height = 18;
+        lightContext = lightCanvas.getContext("2d", { willReadFrequently: true });
+      }
+      lightContext.drawImage(video, 0, 0, 24, 18);
+      const data = lightContext.getImageData(0, 0, 24, 18).data;
       let total = 0;
       for (let index = 0; index < data.length; index += 4) total += data[index] * 0.3 + data[index + 1] * 0.59 + data[index + 2] * 0.11;
       return total / (data.length / 4);

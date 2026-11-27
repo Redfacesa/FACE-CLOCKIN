@@ -126,28 +126,24 @@ export function overviewPage({ user, board, workDate }) {
 
 export function employeesPage({ user, employees, total, page, pageSize, error = "" }) {
   return app(user, "Employees", `
-    <header class="head"><div><h1>Employees</h1><p class="muted">${total} profiles. Credentials are issued after the person exists.</p></div></header>
+    <header class="head"><div><h1>Employees</h1><p class="muted">${total} ${total === 1 ? "person" : "people"} on this workspace.</p></div></header>
     ${error ? `<p class="error">${escapeHtml(error)}</p>` : ""}
     <table class="card">
-      <thead><tr><th>Number</th><th>Name</th><th>Role</th><th>Department</th><th>Status</th></tr></thead>
-      <tbody>${employees.map((employee) => `<tr><td><a href="/app/employees/${employee.id}">${escapeHtml(employee.employee_number)}</a></td><td><a href="/app/employees/${employee.id}">${escapeHtml(employee.first_name)} ${escapeHtml(employee.last_name)}</a></td><td>${escapeHtml(employee.role_title)}</td><td>${escapeHtml(employee.department_name ?? "")}</td><td>${escapeHtml(employee.status)}</td></tr>`).join("") || `<tr><td colspan="5">No employees yet.</td></tr>`}</tbody>
+      <thead><tr><th>Number</th><th>Name</th><th>Job</th><th>Department</th><th>Status</th></tr></thead>
+      <tbody>${employees.map((employee) => `<tr><td><a href="/app/employees/${employee.id}">${escapeHtml(employee.employee_number)}</a></td><td><a href="/app/employees/${employee.id}">${escapeHtml(employee.first_name)} ${escapeHtml(employee.last_name)}</a></td><td>${escapeHtml(employee.role_title)}</td><td>${escapeHtml(employee.department_name ?? "")}</td><td>${escapeHtml(employee.status)}</td></tr>`).join("") || `<tr><td colspan="5">No one yet. Add the first person below.</td></tr>`}</tbody>
     </table>
     <p class="row">${page > 0 ? `<a href="/app/employees?page=${page - 1}">Previous</a>` : ""}${page + 1 < Math.ceil(total / pageSize) ? `<a href="/app/employees?page=${page + 1}">Next</a>` : ""}</p>
-    <h2>Add employee</h2>
+    <section class="card"><h2>Add someone</h2>
+    <p class="muted">Name and job are enough. The next number is chosen for you. Face, tag, and PIN come on the next screen.</p>
     <form method="post" action="/app/employees">
-      <label>First name<input name="firstName" required></label>
-      <label>Surname<input name="lastName" required></label>
-      <label>Employee number<input name="employeeNumber" required></label>
-      <label>Role<input name="roleTitle" required></label>
-      <label>Department<input name="department"></label>
-      <label>Phone<input name="phone"></label>
-      <label>Email<input name="email" type="email"></label>
-      <label>PIN<input name="pin" inputmode="numeric" minlength="4" maxlength="6" placeholder="4–6 digits, used to confirm clock-in"></label>
-      <button class="button" type="submit">Register employee</button>
-    </form>`);
+      <label>First name<input name="firstName" required autocomplete="given-name"></label>
+      <label>Surname<input name="lastName" required autocomplete="family-name"></label>
+      <label>What do they do?<input name="roleTitle" placeholder="Waiter, cook, manager"></label>
+      <button class="button" type="submit">Add employee</button>
+    </form></section>`);
 }
 
-export function employeePage({ user, employee, credentials = [], history = [], faceReady = false, error = "", issued = null }) {
+export function employeePage({ user, employee, credentials = [], history = [], faceReady = false, error = "", issued = null, added = false }) {
   const active = (method) => credentials.some((item) => item.method === method && item.status === "active");
   const writeScript = issued?.method === "nfc"
     ? `<p><button class="button" type="button" id="write">Write NFC card</button> <span id="write-state"></span></p>
@@ -172,6 +168,11 @@ export function employeePage({ user, employee, credentials = [], history = [], f
     <header class="head"><div><p class="eyebrow"><a href="/app/employees/${employee.id}">${escapeHtml(employee.employee_number ?? "")}</a></p><h1>${escapeHtml(employee.first_name)} ${escapeHtml(employee.last_name)}</h1><p class="muted">${escapeHtml(employee.role_title)} · ${escapeHtml(employee.phone || "No phone")} · ${escapeHtml(employee.email || "No email")}</p></div></header>
     ${error ? `<p class="error">${escapeHtml(error)}</p>` : ""}
     ${issuedBlock}
+    <section class="card">
+      <p class="eyebrow">${added ? "Just added" : "How they clock in"}</p>
+      <h2>${added ? `${escapeHtml(employee.first_name)} is on the list` : faceReady ? "Face is registered" : "Register their face"}</h2>
+      <p>${added ? `${escapeHtml(employee.first_name)} is ${escapeHtml(employee.employee_number)}. The next step is their face. Tick consent, press start, and let them follow the words beside the camera.` : faceReady ? "They can clock in at the station by looking at the camera. A tag or PIN below is the backup." : "Tick consent, press start, and let them follow the words beside the camera. A tag or PIN below works when there is no camera."}</p>
+    </section>
     <section class="card"><h2>Profile</h2>
       <p>Facial recognition: ${faceReady ? "Registered" : "Not registered"} · PIN ${active("pin") || employee.has_pin ? "set" : "not set"} · NFC ${active("nfc") ? "linked" : "not issued"}</p>
       ${faceReady ? `<form method="post" action="/app/employees/${employee.id}/face/delete"><button class="button quiet" type="submit">Delete facial template</button></form>` : ""}
@@ -186,8 +187,8 @@ export function employeePage({ user, employee, credentials = [], history = [], f
     <section class="card"><h2>Attendance</h2>
       <table>${history.map((event) => `<tr><td>${escapeHtml(event.work_date)}</td><td>${escapeHtml(event.timeLabel)}</td><td>${escapeHtml(event.event_type === "CLOCK_IN" ? "In" : "Out")}</td><td>${escapeHtml(event.method)}</td></tr>`).join("") || "<tr><td>No attendance yet.</td></tr>"}</table>
     </section>
-    <section class="card"><h2>Employee authentication methods</h2>
-      <p>NFC ${active("nfc") ? "linked" : "not issued"} · QR on the station lists this employee · PIN ${active("pin") || employee.has_pin ? "set" : "not set"} · Face ${faceReady ? "registered" : "not registered"}</p>
+    <section class="card"><h2>Tag or PIN</h2>
+      <p>Use these when the camera is not available. Tag: ${active("nfc") ? "ready" : "not written yet"}. PIN: ${active("pin") || employee.has_pin ? "set" : "not set yet"}.</p>
       <form method="post" action="/app/employees/${employee.id}/nfc"><button class="button" type="submit">Issue NFC card</button></form>
       <form method="post" action="/app/employees/${employee.id}/qr"><button class="button" type="submit">Generate QR credential</button></form>
       <form method="post" action="/app/employees/${employee.id}/pin"><label>New PIN<input name="pin" required minlength="4" maxlength="6" inputmode="numeric"></label><button class="button" type="submit">Save PIN</button></form>

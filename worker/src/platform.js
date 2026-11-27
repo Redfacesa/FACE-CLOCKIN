@@ -140,24 +140,35 @@ export async function listEmployees(db, companyId, page) {
   return { employees: rows.results ?? [], total: total.results?.[0]?.total ?? 0, pageSize: PAGE_SIZE };
 }
 
+export async function nextEmployeeNumber(db, companyId) {
+  const rows = await db.prepare("SELECT employee_number FROM employees WHERE company_id = ?").bind(companyId).all();
+  let max = 0;
+  for (const row of rows.results ?? []) {
+    const match = /^EMP-(\d+)$/i.exec(String(row.employee_number ?? ""));
+    if (match) max = Math.max(max, Number(match[1]));
+  }
+  return `EMP-${String(max + 1).padStart(3, "0")}`;
+}
+
 export async function createEmployee(db, companyId, input) {
-  const firstName = required(input.firstName, "Enter a first name.");
-  const lastName = required(input.lastName, "Enter a last name.");
-  const roleTitle = required(input.roleTitle, "Enter a role.");
-  const employeeNumber = required(input.employeeNumber, "Enter an employee number.").toUpperCase();
+  const firstName = required(input.firstName, "Enter their first name.");
+  const lastName = required(input.lastName, "Enter their surname.");
+  const roleTitle = String(input.roleTitle ?? "").trim() || "Staff";
+  const typedNumber = String(input.employeeNumber ?? "").trim();
+  const employeeNumber = (typedNumber || await nextEmployeeNumber(db, companyId)).toUpperCase();
   const subscription = await subscriptionFor(db, companyId);
   const total = await db.prepare("SELECT COUNT(*) AS total FROM employees WHERE company_id = ? AND status = 'active'").bind(companyId).first();
   if ((total?.total ?? 0) >= (subscription?.employee_limit ?? 25)) {
-    throw httpError(`The ${subscription?.plan ?? "starter"} plan allows ${subscription?.employee_limit ?? 25} active employees.`, 402, "plan_limit");
+    throw httpError("This workspace has reached its employee limit. Everyone already added can still be opened.", 402, "plan_limit");
   }
   const existingNumber = await db.prepare("SELECT id FROM employees WHERE company_id = ? AND upper(employee_number) = ?").bind(companyId, employeeNumber).first();
-  if (existingNumber) throw httpError("That employee number is already used.", 409, "number_taken");
+  if (existingNumber) throw httpError("That employee number is already used. Leave the number blank and we will choose the next one.", 409, "number_taken");
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   const departmentId = input.department ? await ensureNamed(db, "departments", companyId, input.department) : null;
   const roleId = await ensureNamed(db, "roles", companyId, roleTitle);
   const pin = String(input.pin ?? "").trim();
-  if (pin && !/^[0-9]{4,6}$/.test(pin)) throw httpError("PIN must be 4 to 6 digits.", 400, "pin_invalid");
+  if (pin && !/^[0-9]{4,6}$/.test(pin)) throw httpError("A PIN is 4 to 6 numbers, with no letters.", 400, "pin_invalid");
   await db.prepare(
     `INSERT INTO employees
      (id, business_id, company_id, department_id, role_id, employee_number, first_name, last_name, role_title, phone, email, status, pin_hash, created_at)

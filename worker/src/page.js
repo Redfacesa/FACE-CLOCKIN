@@ -19,6 +19,10 @@ export function kioskPage(code) {
     .time { font-size:clamp(56px, 10vw, 96px); margin:12px 0; letter-spacing:-.05em; }
     .muted { color:var(--muted); }
     .actions { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:32px; }
+    .actions-main { grid-template-columns:1fr; max-width:520px; }
+    .actions-main button { padding:28px 24px; }
+    .link-row { display:flex; gap:18px; margin-top:8px; }
+    button.text { background:none; border:0; padding:8px 0; color:var(--muted); width:auto; }
     .people { display:grid; gap:10px; } .people button span { color:var(--muted); }
     button { font:inherit; color:inherit; background:rgba(255,255,255,.04); border:1px solid var(--line); border-radius:22px; padding:22px; text-align:left; backdrop-filter:blur(16px); }
     button strong { display:block; font-size:22px; margin-bottom:4px; }
@@ -41,13 +45,12 @@ export function kioskPage(code) {
       <p class="muted" id="online">Station online</p>
       <div class="time" id="clock">--:--</div>
       <p id="date">—</p>
-      <p>Scan your face or tap your NFC card.</p>
-      <div class="actions">
-        <button class="primary" id="nfc" type="button"><strong>NFC card</strong><span>Tap a card or an NFC phone</span></button>
-        <button id="qr" type="button"><strong>QR code</strong><span>Choose your name, then scan</span></button>
-        <button id="face" type="button"><strong>Face</strong><span>Blink once at the camera</span></button>
-        <button id="pin" type="button"><strong>Employee number</strong><span>Number and personal PIN</span></button>
+      <p>Look at the camera, or tap your tag.</p>
+      <div class="actions actions-main">
+        <button class="primary" id="face" type="button"><strong>Face recognition</strong><span>Look at the camera</span></button>
+        <button id="nfc" type="button"><strong>Tags</strong><span>Tap your card</span></button>
       </div>
+      <p class="link-row"><button class="text" id="pin" type="button">Number and PIN</button><button class="text" id="qr" type="button">QR code</button></p>
       <p class="error" id="home-error"></p>
     </section>
     <section id="flow" class="panel hidden"></section>

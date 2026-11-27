@@ -210,8 +210,8 @@ async function dashboard(request, env, url) {
     if (request.method === "POST") {
       const form = await request.formData();
       try {
-        await createEmployee(env.DB, user.company_id, Object.fromEntries(form));
-        return redirect("/app/employees");
+        const createdId = await createEmployee(env.DB, user.company_id, Object.fromEntries(form));
+        return redirect(`/app/employees/${createdId}?added=1`);
       } catch (error) {
         if (!error.status) throw error;
         const listed = await listEmployees(env.DB, user.company_id, 0);
@@ -286,7 +286,7 @@ async function dashboard(request, env, url) {
   if (employeeMatch) {
     const employee = await employeeInCompany(env.DB, user.company_id, employeeMatch[1]);
     if (!employee) throw httpError("That employee is not in this company.", 404, "employee_missing");
-    return employeeView(env, user, employee);
+    return employeeView(env, user, employee, { added: url.searchParams.get("added") === "1" });
   }
 
   const documentMatch = path.match(/^\/app\/employees\/([^/]+)\/documents$/);
