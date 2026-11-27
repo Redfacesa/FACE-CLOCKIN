@@ -1,0 +1,13 @@
+{
+  "name": "tryclockin",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test src/clock.test.js",
+    "dev": "cf dev",
+    "deploy": "cf deploy"
+  },
+  "devDependencies": {
+    "cf": "^1.0.0-rc"
+  }
+}
