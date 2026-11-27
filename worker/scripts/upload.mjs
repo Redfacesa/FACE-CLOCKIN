@@ -7,13 +7,20 @@ if (!token || !account) {
   process.exit(1);
 }
 
-const files = ["src/index.js", "src/clock.js", "src/crypto.js", "src/db.js", "src/page.js", "vendor/uqr.mjs"];
+const files = ["src/index.js", "src/clock.js", "src/crypto.js", "src/db.js", "src/page.js", "src/auth.js", "src/platform.js", "src/manage.js", "vendor/uqr.mjs"];
+const secretFile = readFileSync(new URL("../.dev.vars", import.meta.url), "utf8");
+const sessionSecret = secretFile.match(/^SESSION_SECRET=(.*)$/m)?.[1];
+if (!sessionSecret) {
+  console.error("SESSION_SECRET is missing from .dev.vars");
+  process.exit(1);
+}
 const metadata = {
   main_module: "src/index.js",
   compatibility_date: "2026-11-27",
   bindings: [
     { type: "d1", name: "DB", id: "59bf54cc-c7df-4386-8e8c-800ac07c8c73" },
     { type: "r2_bucket", name: "FILES", bucket_name: "tryclockin-files" },
+    { type: "secret_text", name: "SESSION_SECRET", text: sessionSecret },
   ],
 };
 

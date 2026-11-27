@@ -1,4 +1,5 @@
-export function kioskPage() {
+export function kioskPage(code) {
+  const stationCode = String(code).replace(/[^a-zA-Z0-9_-]/g, "");
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -68,7 +69,7 @@ export function kioskPage() {
     <section id="flow" class="panel hidden"></section>
   </main>
   <script>
-    const stationId = new URLSearchParams(location.search).get("station");
+    const stationCode = "${stationCode}";
     const state = { selected: null, snapshot: null, pin: "" };
     const home = document.querySelector("#home");
     const flow = document.querySelector("#flow");
@@ -254,7 +255,7 @@ export function kioskPage() {
     }
 
     async function boot() {
-      const query = stationId ? "?station=" + encodeURIComponent(stationId) : "";
+      const query = "?code=" + encodeURIComponent(stationCode);
       state.snapshot = await api("/api/kiosk" + query);
       document.querySelector("#business").textContent = state.snapshot.station.businessName;
       document.querySelector("#greeting").textContent = state.snapshot.greeting + "!";

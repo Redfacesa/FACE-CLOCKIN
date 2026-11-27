@@ -12,6 +12,7 @@ export default defineConfig({
         id: "59bf54cc-c7df-4386-8e8c-800ac07c8c73",
       }),
       FILES: bindings.r2({ name: "tryclockin-files" }),
+      SESSION_SECRET: bindings.secret(),
     },
   },
 });

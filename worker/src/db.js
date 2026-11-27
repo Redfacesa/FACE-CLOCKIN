@@ -1,56 +1,63 @@
-import { verifySecret } from "./crypto.js";
+import { lookupKey, verifySecret } from "./crypto.js";
 import { publicEmployee, suggestedAction } from "./clock.js";
 
-export async function kioskSnapshot(db, stationId) {
+export async function kioskSnapshot(db, code) {
   const station = await db
     .prepare(
-      `SELECT stations.id, stations.name AS station_name, stations.status,
-              businesses.id AS business_id, businesses.name AS business_name, businesses.timezone
+      `SELECT stations.id, stations.name AS station_name, stations.status, stations.public_code,
+              companies.id AS company_id, companies.name AS company_name, companies.timezone
        FROM stations
-       JOIN businesses ON businesses.id = stations.business_id
-       WHERE stations.id = ?`,
+       JOIN companies ON companies.id = stations.company_id
+       WHERE stations.public_code = ? AND stations.status = 'online' AND companies.status = 'active'`,
     )
-    .bind(stationId)
+    .bind(code)
     .first();
   if (!station) return null;
   const employees = await db
     .prepare(
       `SELECT id, first_name, last_name, role_title, status, pin_hash, nfc_hash, face_object_key
        FROM employees
-       WHERE business_id = ? AND status = 'active'
-       ORDER BY first_name, last_name`,
+       WHERE company_id = ? AND status = 'active'
+       ORDER BY first_name, last_name
+       LIMIT 200`,
     )
-    .bind(station.business_id)
+    .bind(station.company_id)
     .all();
   return {
     station: {
       id: station.id,
       name: station.station_name,
       status: station.status,
-      businessId: station.business_id,
-      businessName: station.business_name,
+      code: station.public_code,
+      companyId: station.company_id,
+      businessName: station.company_name,
       timezone: station.timezone,
     },
     employees: (employees.results ?? []).map(publicEmployee),
   };
 }
 
-export async function latestEvent(db, employeeId) {
+export async function latestEvent(db, employeeId, companyId) {
   return db
     .prepare(
       `SELECT event_type, occurred_at, method
        FROM attendance_events
-       WHERE employee_id = ?
+       WHERE employee_id = ? AND company_id = ?
        ORDER BY occurred_at DESC, id DESC
        LIMIT 1`,
     )
-    .bind(employeeId)
+    .bind(employeeId, companyId)
     .first();
 }
 
 export async function resolveEmployee(db, { method, stationId, employeeId, pin, cardUid, token }) {
   const station = await db
-    .prepare("SELECT id, business_id FROM stations WHERE id = ? AND status = 'online'")
+    .prepare(
+      `SELECT stations.id, stations.company_id, companies.timezone, companies.name AS company_name
+       FROM stations
+       JOIN companies ON companies.id = stations.company_id
+       WHERE stations.id = ? AND stations.status = 'online' AND companies.status = 'active'`,
+    )
     .bind(stationId)
     .first();
   if (!station) {
@@ -58,7 +65,7 @@ export async function resolveEmployee(db, { method, stationId, employeeId, pin, 
   }
 
   if (method === "pin") {
-    const employee = await activeEmployee(db, employeeId, station.business_id);
+    const employee = await activeEmployee(db, employeeId, station.company_id);
     if (!(await verifySecret(pin ?? "", employee.pin_hash))) {
       throw httpError("That PIN is not correct.", 401, "pin_rejected");
     }
@@ -66,17 +73,17 @@ export async function resolveEmployee(db, { method, stationId, employeeId, pin, 
   }
 
   if (method === "nfc") {
-    const rows = await db
+    const employee = await db
       .prepare(
         `SELECT * FROM employees
-         WHERE business_id = ? AND status = 'active' AND nfc_hash IS NOT NULL`,
+         WHERE company_id = ? AND status = 'active' AND nfc_lookup = ?`,
       )
-      .bind(station.business_id)
-      .all();
-    for (const employee of rows.results ?? []) {
-      if (await verifySecret(cardUid ?? "", employee.nfc_hash)) return { employee, station };
+      .bind(station.company_id, await lookupKey(cardUid ?? ""))
+      .first();
+    if (!employee || !(await verifySecret(cardUid ?? "", employee.nfc_hash))) {
+      throw httpError("This card is not registered.", 401, "card_rejected");
     }
-    throw httpError("This card is not registered.", 401, "card_rejected");
+    return { employee, station };
   }
 
   if (method === "qr") {
@@ -96,14 +103,14 @@ export async function resolveEmployee(db, { method, stationId, employeeId, pin, 
       throw httpError("This QR code has expired. Choose your profile again.", 401, "qr_expired");
     }
     if (!challenge.confirmed_at) throw httpError("Scan the code with your phone and confirm it.", 401, "qr_pending");
-    if (challenge.status !== "active" || challenge.business_id !== station.business_id) {
+    if (challenge.status !== "active" || challenge.company_id !== station.company_id) {
       throw httpError("This employee cannot clock at this station.", 403, "employee_inactive");
     }
     return { employee: challenge, station, token };
   }
 
   if (method === "face") {
-    const employee = employeeId ? await activeEmployee(db, employeeId, station.business_id) : null;
+    const employee = employeeId ? await activeEmployee(db, employeeId, station.company_id) : null;
     if (!employee?.face_object_key) {
       throw httpError("No face is enrolled for this station yet.", 409, "face_not_enrolled");
     }
@@ -113,10 +120,10 @@ export async function resolveEmployee(db, { method, stationId, employeeId, pin, 
   throw httpError("Choose NFC, QR, face, or PIN.", 400, "method_rejected");
 }
 
-async function activeEmployee(db, employeeId, businessId) {
+async function activeEmployee(db, employeeId, companyId) {
   const employee = await db
-    .prepare("SELECT * FROM employees WHERE id = ? AND business_id = ?")
-    .bind(employeeId, businessId)
+    .prepare("SELECT * FROM employees WHERE id = ? AND company_id = ?")
+    .bind(employeeId, companyId)
     .first();
   if (!employee || employee.status !== "active") {
     throw httpError("Choose a registered employee.", 404, "employee_missing");
@@ -125,20 +132,20 @@ async function activeEmployee(db, employeeId, businessId) {
 }
 
 export async function openChallenge(db, { token, employeeId, stationId, expiresAt }) {
-  const station = await db.prepare("SELECT business_id FROM stations WHERE id = ?").bind(stationId).first();
+  const station = await db.prepare("SELECT company_id FROM stations WHERE id = ?").bind(stationId).first();
   if (!station) throw httpError("This clocking station is not registered.", 404, "station_missing");
-  await activeEmployee(db, employeeId, station.business_id);
+  await activeEmployee(db, employeeId, station.company_id);
   await db
     .prepare(
-      `INSERT INTO qr_challenges (token, employee_id, station_id, expires_at)
-       VALUES (?, ?, ?, ?)`,
+      `INSERT INTO qr_challenges (token, employee_id, station_id, company_id, expires_at)
+       VALUES (?, ?, ?, ?, ?)`,
     )
-    .bind(token, employeeId, stationId, expiresAt)
+    .bind(token, employeeId, stationId, station.company_id, expiresAt)
     .run();
 }
 
 export async function challengeStatus(db, token) {
-  return db.prepare("SELECT token, employee_id, station_id, expires_at, confirmed_at, consumed_at FROM qr_challenges WHERE token = ?").bind(token).first();
+  return db.prepare("SELECT token, employee_id, station_id, company_id, expires_at, confirmed_at, consumed_at FROM qr_challenges WHERE token = ?").bind(token).first();
 }
 
 export async function confirmChallenge(db, token) {
@@ -152,8 +159,8 @@ export async function confirmChallenge(db, token) {
   const employee = await db.prepare("SELECT first_name, last_name, role_title FROM employees WHERE id = ?").bind(challenge.employee_id).first();
   const station = await db
     .prepare(
-      `SELECT businesses.name AS business_name
-       FROM stations JOIN businesses ON businesses.id = stations.business_id
+      `SELECT companies.name AS business_name
+       FROM stations JOIN companies ON companies.id = stations.company_id
        WHERE stations.id = ?`,
     )
     .bind(challenge.station_id)
@@ -170,7 +177,7 @@ export async function recordAttendance(db, { employee, station, method, action, 
     if (existing) return existing;
   }
 
-  const latest = await latestEvent(db, employee.id);
+  const latest = await latestEvent(db, employee.id, station.company_id);
   const expected = suggestedAction(latest?.event_type ?? null);
   if (action !== expected) {
     throw httpError(
@@ -185,13 +192,14 @@ export async function recordAttendance(db, { employee, station, method, action, 
     db
       .prepare(
         `INSERT INTO attendance_events
-         (id, employee_id, business_id, station_id, event_type, method, occurred_at, work_date, client_event_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, employee_id, business_id, company_id, station_id, event_type, method, occurred_at, work_date, client_event_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
         id,
         employee.id,
-        station.business_id,
+        station.company_id,
+        station.company_id,
         station.id,
         action,
         method,

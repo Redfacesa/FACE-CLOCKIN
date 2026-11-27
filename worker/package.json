@@ -5,7 +5,8 @@
   "scripts": {
     "test": "node --test src/clock.test.js",
     "dev": "cf dev",
-    "deploy": "cf deploy"
+    "deploy": "cf deploy",
+    "upload": "node scripts/upload.mjs"
   },
   "devDependencies": {
     "cf": "^1.0.0-rc"

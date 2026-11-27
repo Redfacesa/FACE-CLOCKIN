@@ -1,5 +1,4 @@
 node_modules
-.next
 .data
 .env
 .env.local
@@ -9,3 +8,6 @@ __pycache__
 *.pyc
 .tools
 .DS_Store
+
+.dev.vars
+worker/.dev.vars

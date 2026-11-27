@@ -9,9 +9,9 @@ export function suggestedAction(lastEventType) {
   return lastEventType === "CLOCK_IN" ? "CLOCK_OUT" : "CLOCK_IN";
 }
 
-export function johannesburg(date = new Date()) {
+export function zonedNow(date = new Date(), timeZone = "Africa/Johannesburg") {
   const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Africa/Johannesburg",
+    timeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -26,7 +26,7 @@ export function johannesburg(date = new Date()) {
   const hour12 = hour % 12 || 12;
   const suffix = hour < 12 ? "AM" : "PM";
   const monthName = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Africa/Johannesburg",
+    timeZone,
     month: "long",
   }).format(date);
   return {
