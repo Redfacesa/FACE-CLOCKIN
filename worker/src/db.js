@@ -1,10 +1,11 @@
 import { lookupKey, verifySecret } from "./crypto.js";
-import { publicEmployee, suggestedAction } from "./clock.js";
+import { suggestedAction } from "./clock.js";
 
 export async function kioskSnapshot(db, code) {
   const station = await db
     .prepare(
       `SELECT stations.id, stations.name AS station_name, stations.status, stations.public_code,
+              stations.location, stations.methods,
               companies.id AS company_id, companies.name AS company_name, companies.timezone
        FROM stations
        JOIN companies ON companies.id = stations.company_id
@@ -13,27 +14,18 @@ export async function kioskSnapshot(db, code) {
     .bind(code)
     .first();
   if (!station) return null;
-  const employees = await db
-    .prepare(
-      `SELECT id, first_name, last_name, role_title, status, pin_hash, nfc_hash, face_object_key
-       FROM employees
-       WHERE company_id = ? AND status = 'active'
-       ORDER BY first_name, last_name
-       LIMIT 200`,
-    )
-    .bind(station.company_id)
-    .all();
   return {
     station: {
       id: station.id,
       name: station.station_name,
       status: station.status,
       code: station.public_code,
+      location: station.location,
+      methods: String(station.methods ?? "nfc,qr,pin").split(","),
       companyId: station.company_id,
       businessName: station.company_name,
       timezone: station.timezone,
     },
-    employees: (employees.results ?? []).map(publicEmployee),
   };
 }
 
@@ -50,10 +42,23 @@ export async function latestEvent(db, employeeId, companyId) {
     .first();
 }
 
-export async function resolveEmployee(db, { method, stationId, employeeId, pin, cardUid, token }) {
+function presentedToken(value) {
+  const text = String(value ?? "").trim();
+  const match = text.match(/\/t\/([A-Za-z0-9_-]+)/);
+  return match?.[1] || text;
+}
+
+function stationAllows(station, method) {
+  const allowed = String(station.methods ?? "nfc,qr,pin").split(",");
+  if (!allowed.includes(method)) {
+    throw httpError("This station does not accept that method.", 403, "method_disabled");
+  }
+}
+
+export async function resolveEmployee(db, { method, stationId, employeeId, employeeNumber, pin, cardUid, token }) {
   const station = await db
     .prepare(
-      `SELECT stations.id, stations.company_id, companies.timezone, companies.name AS company_name
+      `SELECT stations.id, stations.company_id, stations.methods, companies.timezone, companies.name AS company_name
        FROM stations
        JOIN companies ON companies.id = stations.company_id
        WHERE stations.id = ? AND stations.status = 'online' AND companies.status = 'active'`,
@@ -63,58 +68,49 @@ export async function resolveEmployee(db, { method, stationId, employeeId, pin, 
   if (!station) {
     throw httpError("This clocking station is offline.", 404, "station_offline");
   }
+  stationAllows(station, method);
 
   if (method === "pin") {
-    const employee = await activeEmployee(db, employeeId, station.company_id);
-    if (!(await verifySecret(pin ?? "", employee.pin_hash))) {
+    const number = String(employeeNumber ?? "").trim().toUpperCase();
+    const employee = number
+      ? await db.prepare("SELECT * FROM employees WHERE company_id = ? AND upper(employee_number) = ? AND status = 'active'").bind(station.company_id, number).first()
+      : await activeEmployee(db, employeeId, station.company_id);
+    if (!employee) throw httpError("That employee number is not registered.", 404, "employee_missing");
+    const pins = await db.prepare("SELECT secret_hash FROM credentials WHERE company_id = ? AND employee_id = ? AND method = 'pin' AND status = 'active'").bind(station.company_id, employee.id).all();
+    let matched = false;
+    for (const credential of pins.results ?? []) {
+      if (await verifySecret(pin ?? "", credential.secret_hash)) matched = true;
+    }
+    if (!matched && !(await verifySecret(pin ?? "", employee.pin_hash))) {
       throw httpError("That PIN is not correct.", 401, "pin_rejected");
     }
     return { employee, station };
   }
 
-  if (method === "nfc") {
-    const employee = await db
+  if (method === "nfc" || method === "qr") {
+    const secret = presentedToken(token || cardUid);
+    const credential = await db
       .prepare(
-        `SELECT * FROM employees
-         WHERE company_id = ? AND status = 'active' AND nfc_lookup = ?`,
+        `SELECT employees.*
+         FROM credentials
+         JOIN employees ON employees.id = credentials.employee_id AND employees.company_id = credentials.company_id
+         WHERE credentials.company_id = ? AND credentials.method = ? AND credentials.lookup = ? AND credentials.status = 'active' AND employees.status = 'active'`,
       )
-      .bind(station.company_id, await lookupKey(cardUid ?? ""))
+      .bind(station.company_id, method, await lookupKey(secret))
       .first();
-    if (!employee || !(await verifySecret(cardUid ?? "", employee.nfc_hash))) {
-      throw httpError("This card is not registered.", 401, "card_rejected");
+    if (credential) return { employee: credential, station };
+    if (method === "nfc") {
+      const employee = await db
+        .prepare("SELECT * FROM employees WHERE company_id = ? AND status = 'active' AND nfc_lookup = ?")
+        .bind(station.company_id, await lookupKey(cardUid ?? secret))
+        .first();
+      if (employee && (await verifySecret(cardUid ?? secret, employee.nfc_hash))) return { employee, station };
     }
-    return { employee, station };
-  }
-
-  if (method === "qr") {
-    const challenge = await db
-      .prepare(
-        `SELECT qr_challenges.token, qr_challenges.expires_at, qr_challenges.confirmed_at, qr_challenges.consumed_at,
-                employees.*
-         FROM qr_challenges
-         JOIN employees ON employees.id = qr_challenges.employee_id
-         WHERE qr_challenges.token = ? AND qr_challenges.station_id = ?`,
-      )
-      .bind(token, stationId)
-      .first();
-    if (!challenge) throw httpError("This QR code is not valid.", 401, "qr_rejected");
-    if (challenge.consumed_at) throw httpError("This QR code has already been used.", 401, "qr_used");
-    if (Date.parse(challenge.expires_at) <= Date.now()) {
-      throw httpError("This QR code has expired. Choose your profile again.", 401, "qr_expired");
-    }
-    if (!challenge.confirmed_at) throw httpError("Scan the code with your phone and confirm it.", 401, "qr_pending");
-    if (challenge.status !== "active" || challenge.company_id !== station.company_id) {
-      throw httpError("This employee cannot clock at this station.", 403, "employee_inactive");
-    }
-    return { employee: challenge, station, token };
+    throw httpError(method === "nfc" ? "This card is not registered." : "This QR code is not registered.", 401, "credential_rejected");
   }
 
   if (method === "face") {
-    const employee = employeeId ? await activeEmployee(db, employeeId, station.company_id) : null;
-    if (!employee?.face_object_key) {
-      throw httpError("No face is enrolled for this station yet.", 409, "face_not_enrolled");
-    }
-    throw httpError("The camera verifier is not connected on this station yet.", 409, "face_verifier_unavailable");
+    throw httpError("Face verification is not active on this station yet.", 409, "face_verifier_unavailable");
   }
 
   throw httpError("Choose NFC, QR, face, or PIN.", 400, "method_rejected");

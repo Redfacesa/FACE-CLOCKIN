@@ -37,6 +37,17 @@ export function zonedNow(date = new Date(), timeZone = "Africa/Johannesburg") {
   };
 }
 
+export function minutesInZone(date, timeZone = "Africa/Johannesburg") {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const pick = (type) => Number(parts.find((part) => part.type === type)?.value ?? 0);
+  return pick("hour") * 60 + pick("minute");
+}
+
 export function initials(firstName, lastName) {
   return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
 }

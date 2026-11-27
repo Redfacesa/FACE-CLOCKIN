@@ -1,9 +1,11 @@
 const COOKIE = "rf_session";
 
+const MANAGER = new Set(["overview", "employees", "stations", "credentials", "face", "attendance", "shifts", "leave", "reports"]);
+
 export function can(role, action) {
   if (role === "owner") return true;
   if (role === "admin") return action !== "billing";
-  return action === "employees" || action === "stations" || action === "attendance";
+  return MANAGER.has(action);
 }
 
 export async function signSession(secret, session) {

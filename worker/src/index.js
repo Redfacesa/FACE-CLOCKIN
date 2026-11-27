@@ -13,31 +13,50 @@ import {
   resolveEmployee,
 } from "./db.js";
 import {
+  accessPage,
+  attendancePage,
   billingPage,
+  credentialCardPage,
   employeePage,
   employeesPage,
+  facePage,
   homePage,
+  leavePage,
   loginPage,
+  overviewPage,
+  reportsPage,
+  settingsPage,
+  shiftsPage,
   signupPage,
+  stationPreview,
   stationsPage,
-  teamPage,
-  todayPage,
 } from "./manage.js";
 import { kioskPage, phonePage } from "./page.js";
 import {
   authenticate,
-  companyHome,
+  board,
+  confirmCredential,
+  consentRows,
   createEmployee,
+  createLeave,
   createStation,
   currentUser,
   employeeInCompany,
   inviteUser,
+  issueCredential,
+  issuePin,
+  listCredentials,
   listEmployees,
+  listLeave,
   listStations,
   listTeam,
+  recordConsent,
   registerCompany,
+  revokeCredential,
+  saveCompany,
   saveDocument,
   subscriptionFor,
+  updateStation,
 } from "./platform.js";
 
 export default {
@@ -65,6 +84,7 @@ async function route(request, env, url) {
   if (url.pathname === "/login") return login(request, env);
   if (url.pathname === "/logout" && request.method === "POST") return redirect("/", clearCookie());
   if (url.pathname === "/app" || url.pathname.startsWith("/app/")) return dashboard(request, env, url);
+  if (url.pathname.startsWith("/t/")) return html(credentialCardPage(decodeURIComponent(url.pathname.slice(3))));
   if (url.pathname.startsWith("/s/")) {
     const code = decodeURIComponent(url.pathname.slice(3));
     return html(kioskPage(code));
@@ -110,11 +130,15 @@ async function dashboard(request, env, url) {
   if (!user) return redirect("/login");
   const path = url.pathname;
 
+  const local = zonedNow(new Date(), user.timezone);
+  const guard = (action) => {
+    if (!can(user.role, action)) throw httpError("You cannot open that section.", 403, "forbidden");
+  };
+  const todayBoard = () => board(env.DB, user.company_id, local.workDate, user.timezone, user.default_start || "08:00");
+
   if (path === "/app") {
-    const local = zonedNow(new Date(), user.timezone);
-    const home = await companyHome(env.DB, user.company_id, local.workDate);
-    home.events = home.events.map((event) => ({ ...event, timeLabel: zonedNow(new Date(event.occurred_at), user.timezone).timeLabel }));
-    return html(todayPage({ user, home, workDate: local.dateLabel }));
+    guard("overview");
+    return html(overviewPage({ user, board: await todayBoard(), workDate: local.dateLabel }));
   }
 
   if (path === "/app/employees") {
@@ -135,11 +159,38 @@ async function dashboard(request, env, url) {
     return html(employeesPage({ user, ...listed, page: Number.isFinite(page) ? page : 0 }));
   }
 
+  const credentialAction = path.match(/^\/app\/employees\/([^/]+)\/(nfc|qr|pin|consent)$/);
+  if (credentialAction && request.method === "POST") {
+    guard("credentials");
+    const employeeId = credentialAction[1];
+    const action = credentialAction[2];
+    if (action === "consent") {
+      guard("face");
+      await recordConsent(env.DB, user.company_id, employeeId);
+      return redirect("/app/face");
+    }
+    if (action === "pin") {
+      const form = await request.formData();
+      await issuePin(env.DB, user.company_id, employeeId, form.get("pin"));
+      return redirect(`/app/employees/${employeeId}`);
+    }
+    const issued = await issueCredential(env.DB, user.company_id, employeeId, action);
+    const link = `${url.origin}/t/${issued.token}`;
+    const employee = await employeeInCompany(env.DB, user.company_id, employeeId);
+    const credentials = await listCredentials(env.DB, user.company_id, employeeId);
+    return html(employeePage({
+      user,
+      employee,
+      credentials,
+      issued: { id: issued.id, method: action, url: link, svg: action === "qr" ? renderSVG(link, { pixelSize: 6, ecc: "M" }) : "" },
+    }));
+  }
+
   const employeeMatch = path.match(/^\/app\/employees\/([^/]+)$/);
   if (employeeMatch) {
     const employee = await employeeInCompany(env.DB, user.company_id, employeeMatch[1]);
     if (!employee) throw httpError("That employee is not in this company.", 404, "employee_missing");
-    return html(employeePage({ user, employee }));
+    return html(employeePage({ user, employee, credentials: await listCredentials(env.DB, user.company_id, employee.id) }));
   }
 
   const documentMatch = path.match(/^\/app\/employees\/([^/]+)\/documents$/);
@@ -161,7 +212,7 @@ async function dashboard(request, env, url) {
     if (request.method === "POST") {
       const form = await request.formData();
       try {
-        await createStation(env.DB, user.company_id, form.get("name"));
+        await createStation(env.DB, user.company_id, form.get("name"), form.get("location"));
         return redirect("/app/stations");
       } catch (error) {
         if (!error.status) throw error;
@@ -171,24 +222,92 @@ async function dashboard(request, env, url) {
     return html(stationsPage({ user, stations: await listStations(env.DB, user.company_id), origin: url.origin }));
   }
 
-  if (path === "/app/team") {
-    if (!can(user.role, "team")) throw httpError("You cannot manage users.", 403, "forbidden");
+  const stationMatch = path.match(/^\/app\/stations\/([^/]+)$/);
+  if (stationMatch) {
+    guard("stations");
+    const station = (await listStations(env.DB, user.company_id)).find((item) => item.id === stationMatch[1]);
+    if (!station) throw httpError("That station is not in this company.", 404, "station_missing");
     if (request.method === "POST") {
-      const form = await request.formData();
-      try {
-        await inviteUser(env.DB, user, Object.fromEntries(form));
-        return redirect("/app/team");
-      } catch (error) {
-        if (!error.status) throw error;
-        return html(teamPage({ user, team: await listTeam(env.DB, user.company_id), error: error.message }), error.status);
-      }
+      await updateStation(env.DB, user.company_id, station.id, Object.fromEntries(await request.formData()));
+      return redirect(`/app/stations/${station.id}`);
     }
-    return html(teamPage({ user, team: await listTeam(env.DB, user.company_id) }));
+    return html(stationPreview({ user, station, origin: url.origin }));
   }
 
-  if (path === "/app/subscription") {
-    if (!can(user.role, "billing")) throw httpError("Only the account owner can view the subscription.", 403, "forbidden");
-    return html(billingPage({ user, subscription: await subscriptionFor(env.DB, user.company_id) }));
+  if (path === "/app/access") {
+    guard("credentials");
+    return html(accessPage({ user, credentials: await listCredentials(env.DB, user.company_id) }));
+  }
+  const revoke = path.match(/^\/app\/credentials\/([^/]+)\/revoke$/);
+  if (revoke && request.method === "POST") {
+    guard("credentials");
+    await revokeCredential(env.DB, user.company_id, revoke[1]);
+    return redirect("/app/access");
+  }
+  const confirm = path.match(/^\/app\/credentials\/([^/]+)\/confirm$/);
+  if (confirm && request.method === "POST") {
+    guard("credentials");
+    await confirmCredential(env.DB, user.company_id, confirm[1]);
+    return redirect("/app/access");
+  }
+  if (path === "/app/face") {
+    guard("face");
+    return html(facePage({ user, people: await consentRows(env.DB, user.company_id) }));
+  }
+  if (path === "/app/attendance") {
+    guard("attendance");
+    return html(attendancePage({ user, board: await todayBoard() }));
+  }
+  if (path === "/app/shifts") {
+    guard("shifts");
+    if (request.method === "POST") {
+      await saveCompany(env.DB, user.company_id, { companyName: user.company_name, defaultStart: (await request.formData()).get("defaultStart"), timezone: user.timezone, address: user.address, phone: user.contact_phone });
+      return redirect("/app/shifts");
+    }
+    return html(shiftsPage({ user, start: user.default_start || "08:00" }));
+  }
+  if (path === "/app/leave") {
+    guard("leave");
+    if (request.method === "POST") {
+      try {
+        await createLeave(env.DB, user.company_id, Object.fromEntries(await request.formData()));
+        return redirect("/app/leave");
+      } catch (error) {
+        if (!error.status) throw error;
+        const listed = await listEmployees(env.DB, user.company_id, 0);
+        return html(leavePage({ user, leave: await listLeave(env.DB, user.company_id), employees: listed.employees, error: error.message }), error.status);
+      }
+    }
+    const listed = await listEmployees(env.DB, user.company_id, 0);
+    return html(leavePage({ user, leave: await listLeave(env.DB, user.company_id), employees: listed.employees }));
+  }
+  if (path === "/app/reports") {
+    guard("reports");
+    return html(reportsPage({ user, board: await todayBoard() }));
+  }
+  if (path === "/app/billing" || path === "/app/subscription") {
+    guard("billing");
+    const listed = await listEmployees(env.DB, user.company_id, 0);
+    return html(billingPage({ user, subscription: await subscriptionFor(env.DB, user.company_id), used: listed.total }));
+  }
+  if (path === "/app/settings" || path === "/app/team") {
+    guard("settings");
+    if (request.method === "POST" && path === "/app/settings") {
+      await saveCompany(env.DB, user.company_id, Object.fromEntries(await request.formData()));
+      return redirect("/app/settings");
+    }
+    return html(settingsPage({ user: await currentUser(env.DB, await readSession(request, env.SESSION_SECRET)), team: await listTeam(env.DB, user.company_id) }));
+  }
+  if (path === "/app/settings/team" && request.method === "POST") {
+    guard("settings");
+    const form = await request.formData();
+    try {
+      await inviteUser(env.DB, user, Object.fromEntries(form));
+      return redirect("/app/settings");
+    } catch (error) {
+      if (!error.status) throw error;
+      return html(settingsPage({ user, team: await listTeam(env.DB, user.company_id), error: error.message }), error.status);
+    }
   }
 
   return json({ error: "Not found." }, 404);
