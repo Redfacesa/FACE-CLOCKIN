@@ -1,3 +1,5 @@
+import { faceCapture } from "./faceui.js";
+
 export function kioskPage(code) {
   const stationCode = String(code).replace(/[^a-zA-Z0-9_-]/g, "");
   return `<!doctype html>
@@ -17,6 +19,7 @@ export function kioskPage(code) {
     .time { font-size:clamp(56px, 10vw, 96px); margin:12px 0; letter-spacing:-.05em; }
     .muted { color:var(--muted); }
     .actions { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:28px; }
+    .people { display:grid; gap:8px; } .people button span { color:#a3a3a3; }
     button { font:inherit; color:inherit; background:#1c1c1c; border:1px solid #2c2c2c; border-radius:18px; padding:22px; text-align:left; }
     button strong { display:block; font-size:22px; }
     button.primary { background:var(--red); border-color:transparent; }
@@ -37,14 +40,21 @@ export function kioskPage(code) {
       <p id="date">—</p>
       <p>Scan your face or tap your NFC card.</p>
       <div class="actions">
-        <button class="primary" id="nfc" type="button"><strong>NFC card</strong><span>Tap the card on this station</span></button>
-        <button id="qr" type="button"><strong>QR code</strong><span>Show the issued credential</span></button>
+        <button class="primary" id="nfc" type="button"><strong>NFC card</strong><span>Tap a card or an NFC phone</span></button>
+        <button id="qr" type="button"><strong>QR code</strong><span>Choose your name, then scan</span></button>
+        <button id="face" type="button"><strong>Face</strong><span>Blink once at the camera</span></button>
+        <button id="pin" type="button"><strong>Employee number</strong><span>Number and personal PIN</span></button>
       </div>
-      <p><button id="pin" type="button">Employee number and PIN</button></p>
       <p class="error" id="home-error"></p>
     </section>
     <section id="flow" class="panel hidden"></section>
-    <p class="foot">Powered by Red Face Workforce</p>
+    <section id="face-panel" class="panel hidden">${faceCapture({
+      heading: "Face",
+      detail: "Blink once. The station matches the live face to a registered employee, then asks you to confirm.",
+      mode: "identify",
+      postUrl: "/api/identify",
+    })}<p><button id="face-back" type="button">Back</button></p></section>
+    <p class="foot">Powered by Red Face Workforce · © Red Face (Pty) Ltd</p>
   </main>
   <script>
     const stationCode = "${stationCode}";
@@ -52,8 +62,9 @@ export function kioskPage(code) {
     const home = document.querySelector("#home");
     const flow = document.querySelector("#flow");
 
-    function showHome() { flow.classList.add("hidden"); home.classList.remove("hidden"); }
-    function showFlow(html) { home.classList.add("hidden"); flow.classList.remove("hidden"); flow.innerHTML = html; }
+    const facePanel = document.querySelector("#face-panel");
+    function showHome() { flow.classList.add("hidden"); facePanel.classList.add("hidden"); home.classList.remove("hidden"); }
+    function showFlow(html) { home.classList.add("hidden"); facePanel.classList.add("hidden"); flow.classList.remove("hidden"); flow.innerHTML = html; }
 
     async function api(path, body) {
       const response = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -69,25 +80,21 @@ export function kioskPage(code) {
     }
 
     function present(proof) {
-      return async function finish(action) {
-        const body = { ...proof, stationId: state.station.id, action };
-        if (!action) {
-          const identified = await api("/api/identify", proofBody(proof));
-          if (identified.suggestedAction === "CLOCK_OUT") {
-            showFlow('<h1>' + identified.employee.firstName + ' is clocked in</h1><p>Clock out now?</p><p><button class="primary" id="out" type="button">Clock out</button> <button id="back" type="button">Not now</button></p><p class="error" id="err"></p>');
-            document.querySelector("#back").onclick = showHome;
-            document.querySelector("#out").onclick = async () => { try { render(await api("/api/clock", { ...proofBody(proof), action: "CLOCK_OUT" })); } catch (error) { document.querySelector("#err").textContent = error.message; } };
-            return;
-          }
-          render(await api("/api/clock", { ...proofBody(proof), action: "CLOCK_IN" }));
-          return;
-        }
-        render(await api("/api/clock", body));
+      return async function finish() {
+        const identified = await api("/api/identify", proofBody(proof));
+        const leaving = identified.suggestedAction === "CLOCK_OUT";
+        const verb = leaving ? "clocking out" : "clocking in";
+        showFlow('<h1>Are you ' + verb + ', ' + identified.employee.firstName + '?</h1><p><button class="primary" id="yes" type="button">Confirm</button> <button id="back" type="button">Not now</button></p><p class="error" id="err"></p>');
+        document.querySelector("#back").onclick = showHome;
+        document.querySelector("#yes").onclick = async () => {
+          try { render(await api("/api/clock", { ...proofBody(proof), action: identified.suggestedAction })); }
+          catch (error) { document.querySelector("#err").textContent = error.message; }
+        };
       };
     }
 
     function proofBody(proof) {
-      return { method: proof.method, stationId: state.station.id, token: proof.token, cardUid: proof.cardUid, employeeNumber: proof.employeeNumber, pin: proof.pin };
+      return { method: proof.method, stationId: state.station.id, token: proof.token, cardUid: proof.cardUid, employeeNumber: proof.employeeNumber, pin: proof.pin, descriptor: proof.descriptor };
     }
 
     function render(result) {
@@ -116,25 +123,28 @@ export function kioskPage(code) {
     }
 
     async function startQr() {
-      showFlow('<h1>Scan QR code</h1><video id="camera" autoplay playsinline style="width:100%;border-radius:16px"></video><p class="error" id="err"></p><p><button id="back" type="button">Back</button></p>');
-      let stopped = false;
-      let stream = null;
-      const stop = () => { stopped = true; stream?.getTracks().forEach((track) => track.stop()); };
-      document.querySelector("#back").onclick = () => { stop(); showHome(); };
-      if (!("BarcodeDetector" in window)) { document.querySelector("#err").textContent = "This browser cannot scan a QR code."; return; }
-      const video = document.querySelector("#camera");
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-      video.srcObject = stream;
-      const detector = new BarcodeDetector({ formats: ["qr_code"] });
-      const loop = async () => {
-        if (stopped) return;
-        try {
-          const codes = await detector.detect(video);
-          if (codes[0]?.rawValue) { stop(); await present({ method: "qr", token: codes[0].rawValue })(); return; }
-        } catch (error) { document.querySelector("#err").textContent = error.message; }
-        requestAnimationFrame(loop);
-      };
-      video.onloadeddata = loop;
+      const response = await fetch("/api/kiosk/people?code=" + encodeURIComponent(stationCode));
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "The employee list is unavailable.");
+      const esc = (value) => String(value ?? "").replace(/[&<>]/g, (char) => char === "&" ? "&amp;" : char === "<" ? "&lt;" : "&gt;");
+      const buttons = payload.people.map((person) => '<button type="button" data-id="' + esc(person.id) + '"><strong>' + esc(person.firstName) + " " + esc(person.lastName) + "</strong><span>" + esc(person.employeeNumber) + "</span></button>").join("");
+      showFlow('<h1>QR code</h1><p>Choose your name. Scan the code with your phone and enter your PIN there.</p><div class="people">' + buttons + '</div><p><button id="back" type="button">Back</button></p><p class="error" id="err"></p>');
+      document.querySelector("#back").onclick = showHome;
+      document.querySelectorAll("[data-id]").forEach((button) => {
+        button.onclick = async () => {
+          try {
+            const issued = await api("/api/qr", { employeeId: button.dataset.id, stationId: state.station.id });
+            showFlow('<h1>Scan this code</h1>' + issued.svg + '<p>On your phone, confirm clock-in and enter your PIN.</p><p><button id="back" type="button">Back</button></p>');
+            document.querySelector("#back").onclick = showHome;
+          } catch (error) { document.querySelector("#err").textContent = error.message; }
+        };
+      });
+    }
+
+    function startFace() {
+      home.classList.add("hidden");
+      flow.classList.add("hidden");
+      facePanel.classList.remove("hidden");
     }
 
     function startPin() {
@@ -157,14 +167,32 @@ export function kioskPage(code) {
       document.querySelector("#online").textContent = "Station online · " + payload.station.name;
       tick();
       setInterval(tick, 1000);
+      window.faceRequest = () => ({ stationId: state.station.id });
+      window.onFaceIdentified = (payload, descriptor) => {
+        facePanel.classList.add("hidden");
+        const leaving = payload.suggestedAction === "CLOCK_OUT";
+        showFlow('<h1>Are you ' + (leaving ? "clocking out" : "clocking in") + ', ' + payload.employee.firstName + '?</h1><p><button class="primary" id="yes" type="button">Confirm</button> <button id="back" type="button">Not now</button></p><p class="error" id="err"></p>');
+        document.querySelector("#back").onclick = showHome;
+        document.querySelector("#yes").onclick = async () => {
+          try { render(await api("/api/clock", { method: "face", stationId: state.station.id, descriptor, action: payload.suggestedAction })); }
+          catch (error) { document.querySelector("#err").textContent = error.message; }
+        };
+      };
+      document.querySelector("#face-back").onclick = showHome;
       document.querySelector("#nfc").onclick = startNfc;
       document.querySelector("#qr").onclick = () => startQr().catch((error) => { document.querySelector("#home-error").textContent = error.message; });
+      document.querySelector("#face").onclick = startFace;
       document.querySelector("#pin").onclick = startPin;
     }
     boot().catch((error) => { document.querySelector("#home-error").textContent = error.message; });
   </script>
 </body>
 </html>`;
+}
+
+export function phoneConfirmPage({ name, action, token, error = "" }) {
+  const verb = action === "CLOCK_OUT" ? "clocking out" : "clocking in";
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Confirm attendance</title></head><body style="font-family:sans-serif;background:#141414;color:white"><main style="max-width:420px;margin:40px auto;padding:0 16px"><p style="letter-spacing:.2em">REDFACE</p><h1>Are you ${verb}, ${escapeHtml(name)}?</h1><p>Enter your PIN. This confirms the clocking is yours.</p>${error ? `<p style="color:#f0c2c6">${escapeHtml(error)}</p>` : ""}<form method="post"><input type="hidden" name="action" value="${escapeHtml(action)}"><label>PIN<br><input name="pin" inputmode="numeric" required minlength="4" maxlength="6" style="font:inherit;padding:12px;width:100%;margin:8px 0"></label><p><button type="submit" style="background:#9f1d2d;color:white;border:0;border-radius:999px;padding:12px 16px;font:inherit">Confirm</button></p></form><p style="color:#a3a3a3">© Red Face (Pty) Ltd</p></main></body></html>`;
 }
 
 export function phonePage({ title, body }) {

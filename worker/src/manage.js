@@ -1,4 +1,5 @@
 import { can } from "./auth.js";
+import { faceCapture } from "./faceui.js";
 import { INDUSTRIES, PLANS } from "./platform.js";
 
 const NAV = [
@@ -33,7 +34,7 @@ export function signupPage({ error = "", values = {} } = {}) {
     <main class="gate">
       <p class="mark">REDFACE</p>
       <h1>Open a company workspace</h1>
-      <p class="lead">You become the primary owner. The workspace is isolated to your company.</p>
+      <p class="lead">You become the primary owner. We email a verification link first. Verifying the email and activating the workspace are separate steps, and sign-in opens only after both.</p>
       ${error ? `<p class="error">${escapeHtml(error)}</p>` : ""}
       <form method="post" action="/signup">
         <label>Company name<input name="companyName" required value="${escapeHtml(values.companyName ?? "")}"></label>
@@ -64,16 +65,49 @@ export function loginPage({ error = "" } = {}) {
     </main>`);
 }
 
+export function pendingPage({ email, warning = "" }) {
+  return shell("Check your email", `
+    <main class="gate">
+      <p class="mark">REDFACE</p>
+      <h1>Check your email</h1>
+      <p class="lead">We sent a verification link to ${escapeHtml(email)}. Open it to verify the address. The workspace stays inactive until you activate it on the next screen.</p>
+      ${warning ? `<p class="error">${escapeHtml(warning)}</p>` : ""}
+      <form method="post" action="/signup/resend"><input type="hidden" name="email" value="${escapeHtml(email)}"><button class="button quiet" type="submit">Send the email again</button></form>
+    </main>`);
+}
+
+export function verifyPage({ companyName, token, verified = false, error = "" }) {
+  return shell("Verify email", `
+    <main class="gate">
+      <p class="mark">REDFACE</p>
+      <h1>${verified ? "Email verified" : "Verify email"}</h1>
+      <p class="lead">${escapeHtml(companyName)} can be activated after this address is verified. Activation is a separate step and does not happen when the email is sent.</p>
+      ${error ? `<p class="error">${escapeHtml(error)}</p>` : ""}
+      ${verified ? `<form method="post" action="/verify/${encodeURIComponent(token)}"><button class="button" type="submit">Activate workspace</button></form>` : `<p><a class="button" href="/verify/${encodeURIComponent(token)}">Verify email</a></p>`}
+      <p class="muted">Sign-in stays closed until the workspace is active.</p>
+    </main>`);
+}
+
+export function activatedPage() {
+  return shell("Workspace active", `
+    <main class="gate">
+      <p class="mark">REDFACE</p>
+      <h1>Workspace active</h1>
+      <p class="lead">The email is verified and the company workspace is active. You can sign in.</p>
+      <p><a class="button" href="/login">Sign in</a></p>
+    </main>`);
+}
+
 export function overviewPage({ user, board, workDate }) {
   const max = Math.max(1, ...board.week.map((day) => day.punches));
   return app(user, "Overview", `
     <header class="head"><div><p class="eyebrow">Live attendance</p><h1>${escapeHtml(user.company_name)}</h1><p class="muted">${escapeHtml(workDate)}</p></div></header>
     <section class="stats">
+      ${stat("Employees", board.rows.length)}
       ${stat("Clocked in", board.clockedIn)}
+      ${stat("Clocked out", board.clockedOut)}
       ${stat("Absent", board.absent)}
       ${stat("Late", board.late)}
-      ${stat("Clocked out", board.clockedOut)}
-      ${stat("Hours today", board.hours)}
     </section>
     <section class="split">
       <div class="card">
@@ -81,6 +115,8 @@ export function overviewPage({ user, board, workDate }) {
         <table>${board.rows.slice(0, 8).map((row) => `<tr><td>${escapeHtml(row.first_name)} ${escapeHtml(row.last_name)}</td><td>${escapeHtml(row.lastLabel)}</td><td>${escapeHtml(labelState(row.state))}</td></tr>`).join("") || "<tr><td>No employees yet.</td></tr>"}</table>
       </div>
       <div class="card">
+        <h2>Recent activity</h2>
+        <table>${board.activity.slice(0, 8).map((event) => `<tr><td>${escapeHtml(event.name)}</td><td>${escapeHtml(event.timeLabel)}</td><td>${escapeHtml(event.event_type === "CLOCK_IN" ? "Clocked in" : "Clocked out")}</td></tr>`).join("") || "<tr><td>No clock activity yet.</td></tr>"}</table>
         <h2>This week</h2>
         <div class="bars">${board.week.map((day) => `<div><span style="height:${Math.round((day.punches / max) * 100)}%"></span><small>${escapeHtml(day.work_date.slice(5))}</small></div>`).join("") || "<p class='muted'>No punches this week.</p>"}</div>
       </div>
@@ -93,7 +129,7 @@ export function employeesPage({ user, employees, total, page, pageSize, error = 
     ${error ? `<p class="error">${escapeHtml(error)}</p>` : ""}
     <table class="card">
       <thead><tr><th>Number</th><th>Name</th><th>Role</th><th>Department</th><th>Status</th></tr></thead>
-      <tbody>${employees.map((employee) => `<tr><td>${escapeHtml(employee.employee_number)}</td><td><a href="/app/employees/${employee.id}">${escapeHtml(employee.first_name)} ${escapeHtml(employee.last_name)}</a></td><td>${escapeHtml(employee.role_title)}</td><td>${escapeHtml(employee.department_name ?? "")}</td><td>${escapeHtml(employee.status)}</td></tr>`).join("") || `<tr><td colspan="5">No employees yet.</td></tr>`}</tbody>
+      <tbody>${employees.map((employee) => `<tr><td><a href="/app/employees/${employee.id}">${escapeHtml(employee.employee_number)}</a></td><td><a href="/app/employees/${employee.id}">${escapeHtml(employee.first_name)} ${escapeHtml(employee.last_name)}</a></td><td>${escapeHtml(employee.role_title)}</td><td>${escapeHtml(employee.department_name ?? "")}</td><td>${escapeHtml(employee.status)}</td></tr>`).join("") || `<tr><td colspan="5">No employees yet.</td></tr>`}</tbody>
     </table>
     <p class="row">${page > 0 ? `<a href="/app/employees?page=${page - 1}">Previous</a>` : ""}${page + 1 < Math.ceil(total / pageSize) ? `<a href="/app/employees?page=${page + 1}">Next</a>` : ""}</p>
     <h2>Add employee</h2>
@@ -103,12 +139,14 @@ export function employeesPage({ user, employees, total, page, pageSize, error = 
       <label>Employee number<input name="employeeNumber" required></label>
       <label>Role<input name="roleTitle" required></label>
       <label>Department<input name="department"></label>
-      <label>PIN<input name="pin" inputmode="numeric" minlength="4" maxlength="6" placeholder="Optional, 4–6 digits"></label>
+      <label>Phone<input name="phone"></label>
+      <label>Email<input name="email" type="email"></label>
+      <label>PIN<input name="pin" inputmode="numeric" minlength="4" maxlength="6" placeholder="4–6 digits, used to confirm clock-in"></label>
       <button class="button" type="submit">Register employee</button>
     </form>`);
 }
 
-export function employeePage({ user, employee, credentials = [], error = "", issued = null }) {
+export function employeePage({ user, employee, credentials = [], history = [], faceReady = false, error = "", issued = null }) {
   const active = (method) => credentials.some((item) => item.method === method && item.status === "active");
   const writeScript = issued?.method === "nfc"
     ? `<p><button class="button" type="button" id="write">Write NFC card</button> <span id="write-state"></span></p>
@@ -130,11 +168,24 @@ export function employeePage({ user, employee, credentials = [], error = "", iss
     ? `<section class="card"><h2>${issued.method === "nfc" ? "Write NFC card" : "Employee QR"}</h2><p>This credential is shown once. It contains no personal details.</p><p class="mono">${escapeHtml(issued.url)}</p>${issued.svg ?? ""}${writeScript}</section>`
     : "";
   return app(user, employee.first_name, `
-    <header class="head"><div><p class="eyebrow">${escapeHtml(employee.employee_number ?? "")}</p><h1>${escapeHtml(employee.first_name)} ${escapeHtml(employee.last_name)}</h1><p class="muted">${escapeHtml(employee.role_title)}</p></div></header>
+    <header class="head"><div><p class="eyebrow"><a href="/app/employees/${employee.id}">${escapeHtml(employee.employee_number ?? "")}</a></p><h1>${escapeHtml(employee.first_name)} ${escapeHtml(employee.last_name)}</h1><p class="muted">${escapeHtml(employee.role_title)} · ${escapeHtml(employee.phone || "No phone")} · ${escapeHtml(employee.email || "No email")}</p></div>${employee.photo_key ? `<img src="/app/employees/${employee.id}/photo" alt="" style="width:88px;height:88px;object-fit:cover;border-radius:16px">` : ""}</header>
     ${error ? `<p class="error">${escapeHtml(error)}</p>` : ""}
     ${issuedBlock}
+    <section class="card"><h2>Profile</h2>
+      <form method="post" action="/app/employees/${employee.id}/photo" enctype="multipart/form-data"><label>Photograph<input type="file" name="photo" accept="image/*" required></label><button class="button quiet" type="submit">Save photograph</button></form>
+      <p>Face ${faceReady ? "registered" : "not registered"} · PIN ${active("pin") || employee.has_pin ? "set" : "not set"} · NFC ${active("nfc") ? "linked" : "not issued"}</p>
+    </section>
+    ${faceCapture({
+      heading: "Register face",
+      detail: "The employee blinks once. We store a biometric template for this company only, with attendance consent under POPIA. A normal photograph is not the template.",
+      mode: "enroll",
+      postUrl: `/app/employees/${employee.id}/face`,
+    })}
+    <section class="card"><h2>Attendance</h2>
+      <table>${history.map((event) => `<tr><td>${escapeHtml(event.work_date)}</td><td>${escapeHtml(event.timeLabel)}</td><td>${escapeHtml(event.event_type === "CLOCK_IN" ? "In" : "Out")}</td><td>${escapeHtml(event.method)}</td></tr>`).join("") || "<tr><td>No attendance yet.</td></tr>"}</table>
+    </section>
     <section class="card"><h2>Employee authentication methods</h2>
-      <p>NFC ${active("nfc") ? "linked" : "not issued"} · QR ${active("qr") ? "issued" : "not issued"} · PIN ${active("pin") ? "set" : "not set"}</p>
+      <p>NFC ${active("nfc") ? "linked" : "not issued"} · QR on the station lists this employee · PIN ${active("pin") || employee.has_pin ? "set" : "not set"} · Face ${faceReady ? "registered" : "not registered"}</p>
       <form method="post" action="/app/employees/${employee.id}/nfc"><button class="button" type="submit">Issue NFC card</button></form>
       <form method="post" action="/app/employees/${employee.id}/qr"><button class="button" type="submit">Generate QR credential</button></form>
       <form method="post" action="/app/employees/${employee.id}/pin"><label>New PIN<input name="pin" required minlength="4" maxlength="6" inputmode="numeric"></label><button class="button" type="submit">Save PIN</button></form>
@@ -152,9 +203,9 @@ export function accessPage({ user, credentials, error = "" }) {
 
 export function facePage({ user, people }) {
   return app(user, "Face Registration", `
-    <header class="head"><div><h1>Face registration</h1><p class="muted">Consent is recorded under POPIA. The camera verifier is not connected, so a face cannot clock anyone in yet.</p></div></header>
+    <header class="head"><div><h1>Face registration</h1><p class="muted">Open an employee profile and register the face there. The station compares a live blink against that template. PIN, NFC and QR remain available if the camera cannot be used.</p></div></header>
     <table class="card"><thead><tr><th>Employee</th><th>Consent</th><th></th></tr></thead>
-    <tbody>${people.map((person) => `<tr><td>${escapeHtml(person.first_name)} ${escapeHtml(person.last_name)}</td><td>${person.consented_at ? "Given" : "Not given"}</td><td><form method="post" action="/app/employees/${person.id}/consent"><button class="button quiet" type="submit">Record consent</button></form></td></tr>`).join("")}</tbody></table>`);
+    <tbody>${people.map((person) => `<tr><td>${escapeHtml(person.first_name)} ${escapeHtml(person.last_name)}</td><td>${person.consented_at ? "Given" : "Not given"}</td><td><a href="/app/employees/${person.id}">Register face</a></td></tr>`).join("")}</tbody></table>`);
 }
 
 export function attendancePage({ user, board }) {
@@ -284,8 +335,9 @@ function shell(title, body) {
     .gate { max-width:520px; margin:0 auto; padding:64px 20px; } .lead { color:var(--muted); } .error { color:#f0c2c6; } .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
     .plans { display:grid; gap:8px; } .choice { display:flex; gap:10px; align-items:center; } .mono { font-family: ui-monospace, monospace; word-break:break-all; }
     .preview { width:100%; height:640px; border:1px solid var(--line); border-radius:18px; background:#0d0d0d; }
-    fieldset { border:1px solid var(--line); border-radius:12px; } @media (max-width:900px) { .app, .stats, .split, .stations { grid-template-columns:1fr; } }
-  </style></head><body>${body}</body></html>`;
+    fieldset { border:1px solid var(--line); border-radius:12px; } .legal { color:var(--muted); font-size:12px; padding:8px 24px 24px; }
+    @media (max-width:900px) { .app, .stats, .split, .stations { grid-template-columns:1fr; } }
+  </style></head><body>${body}<p class="legal">© Red Face (Pty) Ltd. Licensed software.</p></body></html>`;
 }
 
 function escapeHtml(value) {

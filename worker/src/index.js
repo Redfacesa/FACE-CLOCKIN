@@ -20,18 +20,22 @@ import {
   employeePage,
   employeesPage,
   facePage,
+  activatedPage,
   homePage,
   leavePage,
   loginPage,
   overviewPage,
+  pendingPage,
   reportsPage,
   settingsPage,
   shiftsPage,
   signupPage,
   stationPreview,
   stationsPage,
+  verifyPage,
 } from "./manage.js";
-import { kioskPage, phonePage } from "./page.js";
+import { sendVerificationEmail } from "./mail.js";
+import { kioskPage, phoneConfirmPage, phonePage } from "./page.js";
 import {
   authenticate,
   board,
@@ -41,13 +45,19 @@ import {
   createLeave,
   createStation,
   currentUser,
+  activateWorkspace,
+  employeeAttendance,
+  employeeHasFace,
   employeeInCompany,
   inviteUser,
   issueCredential,
   issuePin,
+  issueVerification,
   listCredentials,
   listEmployees,
   listLeave,
+  markEmailVerified,
+  pendingOwner,
   listStations,
   listTeam,
   recordConsent,
@@ -55,6 +65,9 @@ import {
   revokeCredential,
   saveCompany,
   saveDocument,
+  saveFaceTemplate,
+  savePhoto,
+  stationDirectory,
   subscriptionFor,
   updateStation,
 } from "./platform.js";
@@ -70,7 +83,7 @@ export default {
     } catch (error) {
       const status = error.status || 500;
       const message = status === 500 ? "The platform could not complete that." : error.message;
-      if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/v/")) {
+      if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/v/") || url.pathname.endsWith("/face")) {
         return timed(json({ error: message, code: error.code || "error" }, status), started);
       }
       return timed(html(`<p>${escapeText(message)}</p> <p><a href="/">Back</a></p>`, status), started);
@@ -80,7 +93,9 @@ export default {
 
 async function route(request, env, url) {
   if (url.pathname === "/") return html(homePage(), 200, "public, max-age=300");
-  if (url.pathname === "/signup") return signup(request, env);
+  if (url.pathname === "/signup") return signup(request, env, url);
+  if (url.pathname === "/signup/resend" && request.method === "POST") return resendVerification(request, env, url);
+  if (url.pathname.startsWith("/verify/")) return verifyEmail(request, env, url);
   if (url.pathname === "/login") return login(request, env);
   if (url.pathname === "/logout" && request.method === "POST") return redirect("/", clearCookie());
   if (url.pathname === "/app" || url.pathname.startsWith("/app/")) return dashboard(request, env, url);
@@ -90,6 +105,11 @@ async function route(request, env, url) {
     return html(kioskPage(code));
   }
   if (url.pathname === "/api/kiosk") return json(await kioskPayload(env, url));
+  if (url.pathname === "/api/kiosk/people") {
+    const directory = await stationDirectory(env.DB, url.searchParams.get("code") ?? "");
+    if (!directory) throw httpError("This clocking station is not registered.", 404, "station_missing");
+    return json(directory);
+  }
   if (url.pathname === "/api/qr" && request.method === "POST") return json(await createQr(request, env, url));
   if (url.pathname.startsWith("/api/qr/") && request.method === "GET") {
     return json(await qrStatus(decodeURIComponent(url.pathname.slice("/api/qr/".length)), env));
@@ -100,16 +120,53 @@ async function route(request, env, url) {
   return json({ error: "Not found." }, 404);
 }
 
-async function signup(request, env) {
+async function signup(request, env, url) {
   if (request.method !== "POST") return html(signupPage());
   const form = await request.formData();
   const values = Object.fromEntries(form);
   try {
     const account = await registerCompany(env.DB, values);
-    return redirect("/app", await sessionCookieFor(env, account));
+    const token = await issueVerification(env.DB, account.uid, account.companyId);
+    const link = `${url.origin}/verify/${token}`;
+    try {
+      await sendVerificationEmail(env, { to: String(values.email), companyName: String(values.companyName), link });
+      return html(pendingPage({ email: String(values.email) }));
+    } catch (error) {
+      return html(pendingPage({ email: String(values.email), warning: error.message || "The account was created, but the email could not be sent." }));
+    }
   } catch (error) {
     if (!error.status) throw error;
     return html(signupPage({ error: error.message, values }), error.status);
+  }
+}
+
+async function resendVerification(request, env, url) {
+  const email = String((await request.formData()).get("email") ?? "");
+  const owner = await pendingOwner(env.DB, email);
+  if (owner && !owner.activated_at) {
+    const company = await env.DB.prepare("SELECT name FROM companies WHERE id = ?").bind(owner.company_id).first();
+    const token = await issueVerification(env.DB, owner.id, owner.company_id);
+    try {
+      await sendVerificationEmail(env, { to: email, companyName: company?.name ?? "your company", link: `${url.origin}/verify/${token}` });
+    } catch (error) {
+      return html(pendingPage({ email, warning: error.message || "The email could not be sent." }));
+    }
+  }
+  return html(pendingPage({ email }));
+}
+
+async function verifyEmail(request, env, url) {
+  const token = decodeURIComponent(url.pathname.slice("/verify/".length));
+  try {
+    if (request.method === "POST") {
+      await activateWorkspace(env.DB, token);
+      return html(activatedPage());
+    }
+    const row = await markEmailVerified(env.DB, token);
+    return html(verifyPage({ companyName: row.company_name, token, verified: true }));
+  } catch (error) {
+    if (!error.status) throw error;
+    return html(verifyPage({ companyName: "This workspace", token, error: error.message }), error.status);
   }
 }
 
@@ -177,20 +234,38 @@ async function dashboard(request, env, url) {
     const issued = await issueCredential(env.DB, user.company_id, employeeId, action);
     const link = `${url.origin}/t/${issued.token}`;
     const employee = await employeeInCompany(env.DB, user.company_id, employeeId);
-    const credentials = await listCredentials(env.DB, user.company_id, employeeId);
-    return html(employeePage({
-      user,
-      employee,
-      credentials,
+    return employeeView(env, user, employee, {
       issued: { id: issued.id, method: action, url: link, svg: action === "qr" ? renderSVG(link, { pixelSize: 6, ecc: "M" }) : "" },
-    }));
+    });
+  }
+
+  const faceMatch = path.match(/^\/app\/employees\/([^/]+)\/face$/);
+  if (faceMatch && request.method === "POST") {
+    guard("face");
+    const body = await request.json();
+    await saveFaceTemplate(env.DB, user.company_id, faceMatch[1], body.descriptor);
+    return json({ ok: true });
+  }
+
+  const photoMatch = path.match(/^\/app\/employees\/([^/]+)\/photo$/);
+  if (photoMatch && request.method === "POST") {
+    guard("employees");
+    await savePhoto(env.DB, env.FILES, user.company_id, photoMatch[1], (await request.formData()).get("photo"));
+    return redirect(`/app/employees/${photoMatch[1]}`);
+  }
+  if (photoMatch) {
+    const employee = await employeeInCompany(env.DB, user.company_id, photoMatch[1]);
+    if (!employee?.photo_key) throw httpError("No photograph is saved.", 404, "photo_missing");
+    const object = await env.FILES.get(employee.photo_key);
+    if (!object) throw httpError("No photograph is saved.", 404, "photo_missing");
+    return new Response(object.body, { headers: { "content-type": object.httpMetadata?.contentType || "image/jpeg", "cache-control": "private, max-age=60" } });
   }
 
   const employeeMatch = path.match(/^\/app\/employees\/([^/]+)$/);
   if (employeeMatch) {
     const employee = await employeeInCompany(env.DB, user.company_id, employeeMatch[1]);
     if (!employee) throw httpError("That employee is not in this company.", 404, "employee_missing");
-    return html(employeePage({ user, employee, credentials: await listCredentials(env.DB, user.company_id, employee.id) }));
+    return employeeView(env, user, employee);
   }
 
   const documentMatch = path.match(/^\/app\/employees\/([^/]+)\/documents$/);
@@ -324,7 +399,7 @@ async function kioskPayload(env, url) {
 async function createQr(request, env, url) {
   const body = await request.json();
   const token = randomToken();
-  const expiresAt = new Date(Date.now() + 60_000).toISOString();
+  const expiresAt = new Date(Date.now() + 120_000).toISOString();
   await openChallenge(env.DB, { token, employeeId: body.employeeId, stationId: body.stationId, expiresAt });
   return { token, expiresAt, svg: renderSVG(`${url.origin}/v/${token}`, { pixelSize: 8, ecc: "M" }) };
 }
@@ -377,20 +452,54 @@ async function clock(request, env) {
 
 async function phone(request, env, url) {
   const token = decodeURIComponent(url.pathname.slice(3));
-  if (request.method === "POST") {
-    const result = await confirmChallenge(env.DB, token);
-    if (!result.ok) return html(phonePage({ title: "Code expired", body: "Ask the station for a new code." }), 410);
-    return html(phonePage({ title: "Confirmed", body: `${result.employee.first_name}, you can look back at the station.` }));
-  }
   const challenge = await challengeStatus(env.DB, token);
   if (!challenge || challenge.consumed_at || Date.parse(challenge.expires_at) <= Date.now()) {
-    return html(phonePage({ title: "Code expired", body: "Ask the station for a new code." }), 410);
+    return html(phonePage({ title: "Code expired", body: "Choose your name on the station and scan a new code." }), 410);
   }
-  const employee = await env.DB.prepare("SELECT first_name FROM employees WHERE id = ? AND company_id = ?").bind(challenge.employee_id, challenge.company_id).first();
-  return html(phonePage({
-    title: `Confirm ${employee?.first_name ?? "attendance"}`,
-    body: "This code works once and only for the next minute.",
-    token,
+  const employee = await env.DB.prepare("SELECT first_name, employee_number FROM employees WHERE id = ? AND company_id = ?").bind(challenge.employee_id, challenge.company_id).first();
+  const station = await env.DB.prepare("SELECT companies.timezone FROM stations JOIN companies ON companies.id = stations.company_id WHERE stations.id = ?").bind(challenge.station_id).first();
+  const latest = await latestEvent(env.DB, challenge.employee_id, challenge.company_id);
+  const action = latest?.event_type === "CLOCK_IN" ? "CLOCK_OUT" : "CLOCK_IN";
+  if (request.method === "POST") {
+    const form = await request.formData();
+    try {
+      const resolved = await resolveEmployee(env.DB, {
+        method: "pin",
+        stationId: challenge.station_id,
+        employeeNumber: employee?.employee_number,
+        pin: form.get("pin"),
+      });
+      const now = zonedNow(new Date(), station?.timezone || "Africa/Johannesburg");
+      await recordAttendance(env.DB, {
+        employee: resolved.employee,
+        station: resolved.station,
+        method: "qr",
+        action,
+        token,
+        now: { iso: new Date().toISOString(), workDate: now.workDate },
+      });
+      const verb = action === "CLOCK_OUT" ? "Clock-out recorded" : "Clock-in recorded";
+      return html(phonePage({ title: verb, body: `${resolved.employee.first_name}, your attendance is recorded. You can put the phone away.` }));
+    } catch (error) {
+      if (!error.status) throw error;
+      return html(phoneConfirmPage({ name: employee?.first_name ?? "there", action, token, error: error.message }), error.status);
+    }
+  }
+  return html(phoneConfirmPage({ name: employee?.first_name ?? "there", action, token }));
+}
+
+async function employeeView(env, user, employee, extra = {}) {
+  const history = (await employeeAttendance(env.DB, user.company_id, employee.id)).map((event) => ({
+    ...event,
+    timeLabel: zonedNow(new Date(event.occurred_at), user.timezone).timeLabel,
+  }));
+  return html(employeePage({
+    user,
+    employee,
+    credentials: await listCredentials(env.DB, user.company_id, employee.id),
+    history,
+    faceReady: await employeeHasFace(env.DB, user.company_id, employee.id),
+    ...extra,
   }));
 }
 

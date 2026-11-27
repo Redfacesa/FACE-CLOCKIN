@@ -50,7 +50,7 @@ export async function registerCompany(db, input) {
     db.prepare(
       `INSERT INTO companies
        (id, name, registration_number, industry, address, contact_email, contact_phone, timezone, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
     ).bind(
       companyId,
       companyName,
@@ -69,7 +69,7 @@ export async function registerCompany(db, input) {
     ).bind(userId, companyId, email, passwordHash, ownerName, now),
     db.prepare(
       `INSERT INTO stations (id, business_id, company_id, name, status, public_code, location, methods)
-       VALUES (?, ?, ?, 'Station 01 – Main Entrance', 'online', ?, 'Main entrance', 'nfc,qr,pin')`,
+       VALUES (?, ?, ?, 'Station 01 – Main Entrance', 'online', ?, 'Main entrance', 'nfc,qr,pin,face')`,
     ).bind(stationId, companyId, companyId, code),
     db.prepare(
       `INSERT INTO subscriptions (id, company_id, plan, status, started_at, employee_limit)
@@ -83,16 +83,18 @@ export async function authenticate(db, email, password) {
   const user = await db
     .prepare(
       `SELECT company_users.id, company_users.company_id, company_users.password_hash, company_users.full_name, company_users.role,
-              company_users.status, companies.status AS company_status
+              company_users.status, company_users.email_verified_at, company_users.activated_at, companies.status AS company_status
        FROM company_users
        JOIN companies ON companies.id = company_users.company_id
        WHERE company_users.email = ?`,
     )
     .bind(cleanEmail(email))
     .first();
-  if (!user || user.status !== "active" || user.company_status !== "active" || !(await verifySecret(password ?? "", user.password_hash))) {
+  if (!user || user.status !== "active" || !(await verifySecret(password ?? "", user.password_hash))) {
     throw httpError("That email or password is not correct.", 401, "login_rejected");
   }
+  if (!user.email_verified_at) throw httpError("Confirm the email we sent before signing in.", 403, "email_unverified");
+  if (!user.activated_at || user.company_status !== "active") throw httpError("Activate the workspace before signing in. Verification and activation are separate.", 403, "not_activated");
   return { uid: user.id, companyId: user.company_id, role: user.role, name: user.full_name };
 }
 
@@ -157,9 +159,9 @@ export async function createEmployee(db, companyId, input) {
   if (pin && !/^[0-9]{4,6}$/.test(pin)) throw httpError("PIN must be 4 to 6 digits.", 400, "pin_invalid");
   await db.prepare(
     `INSERT INTO employees
-     (id, business_id, company_id, department_id, role_id, employee_number, first_name, last_name, role_title, status, pin_hash, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
-  ).bind(id, companyId, companyId, departmentId, roleId, employeeNumber, firstName, lastName, roleTitle, pin ? await hashSecret(pin, id) : null, now).run();
+     (id, business_id, company_id, department_id, role_id, employee_number, first_name, last_name, role_title, phone, email, status, pin_hash, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+  ).bind(id, companyId, companyId, departmentId, roleId, employeeNumber, firstName, lastName, roleTitle, blank(input.phone), blank(input.email), pin ? await hashSecret(pin, id) : null, now).run();
   if (pin) await issuePin(db, companyId, id, pin);
   return id;
 }
@@ -178,7 +180,7 @@ export async function createStation(db, companyId, name, location) {
   const code = randomToken().slice(0, 12);
   await db.prepare(
     `INSERT INTO stations (id, business_id, company_id, name, status, public_code, location, methods)
-     VALUES (?, ?, ?, ?, 'online', ?, ?, 'nfc,qr,pin')`,
+     VALUES (?, ?, ?, ?, 'online', ?, ?, 'nfc,qr,pin,face')`,
   ).bind(id, companyId, companyId, stationName, code, blank(location) ?? "Workplace").run();
   return { id, code };
 }
@@ -205,6 +207,8 @@ export async function inviteUser(db, actor, input) {
     `INSERT INTO company_users (id, company_id, email, password_hash, full_name, role, status, created_at)
      VALUES (?, ?, ?, ?, ?, ?, 'active', ?)`,
   ).bind(id, actor.company_id, email, await hashSecret(input.password, id), fullName, role, new Date().toISOString()).run();
+  const now = new Date().toISOString();
+  await db.prepare("UPDATE company_users SET email_verified_at = ?, activated_at = ? WHERE id = ?").bind(now, now, id).run();
 }
 
 export async function subscriptionFor(db, companyId) {
@@ -214,11 +218,125 @@ export async function subscriptionFor(db, companyId) {
     .first();
 }
 
+export async function issueVerification(db, userId, companyId) {
+  const token = randomToken();
+  const expires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  await db.prepare(
+    "INSERT INTO email_verifications (lookup, user_id, company_id, purpose, expires_at) VALUES (?, ?, ?, 'signup', ?)",
+  ).bind(await lookupKey(token), userId, companyId, expires).run();
+  return token;
+}
+
+export async function verificationFor(db, token) {
+  const row = await db.prepare(
+    `SELECT email_verifications.lookup, email_verifications.user_id, email_verifications.company_id, email_verifications.expires_at, email_verifications.used_at,
+            company_users.email, company_users.email_verified_at, company_users.full_name, companies.name AS company_name, companies.status AS company_status
+     FROM email_verifications
+     JOIN company_users ON company_users.id = email_verifications.user_id
+     JOIN companies ON companies.id = email_verifications.company_id
+     WHERE email_verifications.lookup = ?`,
+  ).bind(await lookupKey(String(token ?? ""))).first();
+  if (!row || row.used_at || Date.parse(row.expires_at) <= Date.now()) return null;
+  return row;
+}
+
+export async function markEmailVerified(db, token) {
+  const row = await verificationFor(db, token);
+  if (!row) throw httpError("This verification link has expired. Request another email.", 410, "verify_expired");
+  if (!row.email_verified_at) {
+    await db.prepare("UPDATE company_users SET email_verified_at = ? WHERE id = ?").bind(new Date().toISOString(), row.user_id).run();
+    row.email_verified_at = new Date().toISOString();
+  }
+  return row;
+}
+
+export async function activateWorkspace(db, token) {
+  const row = await verificationFor(db, token);
+  if (!row) throw httpError("This activation link has expired. Request another email.", 410, "verify_expired");
+  if (!row.email_verified_at) throw httpError("Verify the email before activating the workspace.", 409, "email_unverified");
+  const now = new Date().toISOString();
+  await db.batch([
+    db.prepare("UPDATE companies SET status = 'active' WHERE id = ?").bind(row.company_id),
+    db.prepare("UPDATE company_users SET activated_at = ? WHERE id = ? AND activated_at IS NULL").bind(now, row.user_id),
+    db.prepare("UPDATE email_verifications SET used_at = ? WHERE lookup = ?").bind(now, row.lookup),
+  ]);
+  return row;
+}
+
 export async function employeeInCompany(db, companyId, employeeId) {
   return db
-    .prepare("SELECT id, employee_number, first_name, last_name, role_title, status FROM employees WHERE id = ? AND company_id = ?")
+    .prepare("SELECT id, employee_number, first_name, last_name, role_title, phone, email, photo_key, status, CASE WHEN pin_hash IS NOT NULL THEN 1 ELSE 0 END AS has_pin FROM employees WHERE id = ? AND company_id = ?")
     .bind(employeeId, companyId)
     .first();
+}
+
+export async function pendingOwner(db, email) {
+  return db.prepare(
+    "SELECT id, company_id, email_verified_at, activated_at FROM company_users WHERE email = ? AND role = 'owner'",
+  ).bind(cleanEmail(email)).first();
+}
+
+export async function saveFaceTemplate(db, companyId, employeeId, descriptor) {
+  if (!Array.isArray(descriptor) || descriptor.length !== 128 || descriptor.some((item) => typeof item !== "number" || !Number.isFinite(item))) {
+    throw httpError("The face scan was not usable. Blink again in good light.", 400, "face_invalid");
+  }
+  const employee = await employeeInCompany(db, companyId, employeeId);
+  if (!employee) throw httpError("That employee is not in this company.", 404, "employee_missing");
+  const now = new Date().toISOString();
+  await db.batch([
+    db.prepare(
+      `INSERT INTO consents (id, company_id, employee_id, purpose, notice_version, consented_at)
+       VALUES (?, ?, ?, 'attendance-face', ?, ?)`,
+    ).bind(crypto.randomUUID(), companyId, employeeId, NOTICE_VERSION, now),
+    db.prepare("UPDATE face_templates SET status = 'replaced' WHERE company_id = ? AND employee_id = ? AND status = 'active'").bind(companyId, employeeId),
+    db.prepare(
+      "INSERT INTO face_templates (id, company_id, employee_id, descriptor, status, created_at) VALUES (?, ?, ?, ?, 'active', ?)",
+    ).bind(crypto.randomUUID(), companyId, employeeId, JSON.stringify(descriptor), now),
+  ]);
+}
+
+export async function employeeHasFace(db, companyId, employeeId) {
+  const row = await db.prepare("SELECT id FROM face_templates WHERE company_id = ? AND employee_id = ? AND status = 'active'").bind(companyId, employeeId).first();
+  return Boolean(row);
+}
+
+export async function employeeAttendance(db, companyId, employeeId) {
+  const rows = await db.prepare(
+    "SELECT event_type, method, occurred_at, work_date FROM attendance_events WHERE company_id = ? AND employee_id = ? ORDER BY occurred_at DESC LIMIT 20",
+  ).bind(companyId, employeeId).all();
+  return rows.results ?? [];
+}
+
+export async function stationDirectory(db, code) {
+  const station = await db.prepare(
+    `SELECT stations.id, stations.company_id
+     FROM stations JOIN companies ON companies.id = stations.company_id
+     WHERE stations.public_code = ? AND stations.status = 'online' AND companies.status = 'active'`,
+  ).bind(code).first();
+  if (!station) return null;
+  const rows = await db.prepare(
+    "SELECT id, first_name, last_name, employee_number FROM employees WHERE company_id = ? AND status = 'active' ORDER BY first_name, last_name",
+  ).bind(station.company_id).all();
+  return {
+    stationId: station.id,
+    people: (rows.results ?? []).map((row) => ({
+      id: row.id,
+      firstName: row.first_name,
+      lastName: row.last_name,
+      employeeNumber: row.employee_number,
+    })),
+  };
+}
+
+export async function savePhoto(db, bucket, companyId, employeeId, file) {
+  if (!file || typeof file.arrayBuffer !== "function" || file.size === 0) throw httpError("Choose a photograph.", 400, "file_missing");
+  if (file.size > 2_000_000) throw httpError("Photographs must be 2 MB or smaller.", 400, "file_too_large");
+  if (!String(file.type || "").startsWith("image/")) throw httpError("Choose an image.", 400, "file_type");
+  const employee = await employeeInCompany(db, companyId, employeeId);
+  if (!employee) throw httpError("That employee is not in this company.", 404, "employee_missing");
+  const key = `companies/${companyId}/employees/${employeeId}/photo`;
+  await bucket.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: file.type } });
+  await db.prepare("UPDATE employees SET photo_key = ? WHERE id = ? AND company_id = ?").bind(key, employeeId, companyId).run();
 }
 
 export async function saveDocument(db, bucket, companyId, employeeId, file) {

@@ -1,5 +1,5 @@
+import { matchFace, suggestedAction } from "./clock.js";
 import { lookupKey, verifySecret } from "./crypto.js";
-import { suggestedAction } from "./clock.js";
 
 export async function kioskSnapshot(db, code) {
   const station = await db
@@ -55,7 +55,7 @@ function stationAllows(station, method) {
   }
 }
 
-export async function resolveEmployee(db, { method, stationId, employeeId, employeeNumber, pin, cardUid, token }) {
+export async function resolveEmployee(db, { method, stationId, employeeId, employeeNumber, pin, cardUid, token, descriptor }) {
   const station = await db
     .prepare(
       `SELECT stations.id, stations.company_id, stations.methods, companies.timezone, companies.name AS company_name
@@ -110,7 +110,11 @@ export async function resolveEmployee(db, { method, stationId, employeeId, emplo
   }
 
   if (method === "face") {
-    throw httpError("Face verification is not active on this station yet.", 409, "face_verifier_unavailable");
+    const rows = await db.prepare("SELECT employee_id, descriptor FROM face_templates WHERE company_id = ? AND status = 'active'").bind(station.company_id).all();
+    const templates = (rows.results ?? []).map((row) => ({ employeeId: row.employee_id, descriptor: JSON.parse(row.descriptor) }));
+    const matchedId = matchFace(descriptor, templates);
+    if (!matchedId) throw httpError("That face is not registered at this company.", 401, "face_rejected");
+    return { employee: await activeEmployee(db, matchedId, station.company_id), station };
   }
 
   throw httpError("Choose NFC, QR, face, or PIN.", 400, "method_rejected");

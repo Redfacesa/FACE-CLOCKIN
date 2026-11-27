@@ -5,6 +5,25 @@ export const METHODS = {
   pin: "PIN",
 };
 
+export function matchFace(probe, templates, threshold = 0.5) {
+  if (!Array.isArray(probe) || probe.length !== 128) return null;
+  let best = { distance: Infinity, employeeId: null };
+  let second = Infinity;
+  for (const template of templates) {
+    if (!template?.descriptor || template.descriptor.length !== probe.length) continue;
+    let sum = 0;
+    for (let index = 0; index < probe.length; index += 1) sum += (probe[index] - template.descriptor[index]) ** 2;
+    const distance = Math.sqrt(sum);
+    if (distance < best.distance) {
+      second = best.distance;
+      best = { distance, employeeId: template.employeeId };
+    } else if (distance < second) second = distance;
+  }
+  if (!best.employeeId || best.distance > threshold) return null;
+  if (second < Infinity && second - best.distance < 0.05) return null;
+  return best.employeeId;
+}
+
 export function suggestedAction(lastEventType) {
   return lastEventType === "CLOCK_IN" ? "CLOCK_OUT" : "CLOCK_IN";
 }
