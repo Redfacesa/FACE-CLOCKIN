@@ -99,6 +99,7 @@ export function faceCapture({ heading, detail, mode, postUrl }) {
         await video.play();
         if (!video.videoWidth) await new Promise((resolve) => video.onloadeddata = resolve);
         box.classList.add("live");
+        document.querySelector("#face-start").hidden = true;
         const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 160, scoreThreshold: 0.35 });
         let running = true;
         let step = 0;
@@ -112,7 +113,7 @@ export function faceCapture({ heading, detail, mode, postUrl }) {
         let taking = false;
         const samples = [];
         const stop = () => { running = false; box.classList.remove("live"); captureButton.hidden = true; stream.getTracks().forEach((track) => track.stop()); };
-        captureButton.hidden = false;
+        captureButton.hidden = !enroll;
         captureButton.onclick = () => { if (latest) take(latest, true); };
         state.textContent = prompts[steps[0]];
         mark();
@@ -188,6 +189,12 @@ export function faceCapture({ heading, detail, mode, postUrl }) {
           if (name === "center") baseline = pose.pitch;
           if (name === "left") sideSign = Math.sign(pose.yaw) || 1;
           if (descriptor && name !== "blink") samples.push({ pose: name, descriptor });
+          if (!enroll) {
+            running = false;
+            taking = false;
+            submit(descriptor, samples, stop);
+            return;
+          }
           step += 1;
           held = 0;
           sawBlink = false;
@@ -222,9 +229,8 @@ export function faceCapture({ heading, detail, mode, postUrl }) {
         }
         watch();
         async function submit(descriptor, captured, finish) {
-          state.textContent = enroll ? "Saving the facial template…" : "Scanning face…";
+          state.textContent = enroll ? "Saving the facial template…" : "Recording attendance…";
           setTone("aligned", enroll ? "Capture successful" : "Face aligned");
-          if (!enroll) window.onFaceAttemptStart?.();
           try {
             const extra = window.faceRequest?.() ?? {};
             const body = enroll ? { samples: captured, ...extra } : { descriptor, method: "face", ...extra };
@@ -232,17 +238,21 @@ export function faceCapture({ heading, detail, mode, postUrl }) {
             const payload = await response.json();
             if (!response.ok) throw new Error(payload.error || "Face not recognised.");
             if (!enroll && !payload?.employee?.firstName) throw new Error("Face not recognised.");
-            finish();
             if (enroll) {
+              finish();
               setTone("captured", "Capture successful");
               state.textContent = "Facial recognition: registered.";
               return;
             }
-            window.onFaceIdentified?.(payload, descriptor);
+            await window.onFaceIdentified?.(payload, descriptor);
+            finish();
           } catch (error) {
             state.textContent = error.message || "Face not recognised.";
             setTone("attention", "Face positioning");
-            if (!enroll) window.onFaceRejected?.(state.textContent);
+            if (!enroll) {
+              finish();
+              window.onFaceRejected?.(state.textContent);
+            }
           }
         }
       } catch (error) {

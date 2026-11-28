@@ -1,5 +1,5 @@
 import { adminGate, holdPage, landingPage, reviewPage, signupPage } from "./site.js";
-import { renderSVG } from "../vendor/uqr.mjs";
+import { encode, renderSVG } from "../vendor/uqr.mjs";
 import { adminCookie, can, clearCookie, openToken, readAdminSession, readSession, sessionCookie, signSession } from "./auth.js";
 import { METHODS, zonedNow, publicEmployee } from "./clock.js";
 import { randomToken } from "./crypto.js";
@@ -369,7 +369,7 @@ async function dashboard(request, env, url) {
     const link = `${url.origin}/t/${issued.token}`;
     const employee = await employeeInCompany(env.DB, user.company_id, employeeId);
     return employeeView(env, user, employee, {
-      issued: { id: issued.id, method: action, url: link, svg: action === "qr" ? renderSVG(link, { pixelSize: 6, ecc: "M" }) : "" },
+      issued: { id: issued.id, method: action, url: link, png: action === "qr" ? await qrPng(link) : "" },
     });
   }
 
@@ -706,6 +706,65 @@ function html(body, status = 200, cache = "no-store") {
     status,
     headers: { "content-type": "text/html; charset=utf-8", "cache-control": cache },
   });
+}
+
+async function qrPng(text) {
+  const result = encode(text, { ecc: "M" });
+  const scale = 10;
+  const quiet = 4;
+  const modules = result.size + quiet * 2;
+  const size = modules * scale;
+  const raw = new Uint8Array((size + 1) * size);
+  for (let y = 0; y < size; y += 1) {
+    const row = Math.floor(y / scale) - quiet;
+    raw[y * (size + 1)] = 0;
+    for (let x = 0; x < size; x += 1) {
+      const col = Math.floor(x / scale) - quiet;
+      const dark = row >= 0 && col >= 0 && row < result.size && col < result.size && result.data[row][col];
+      raw[y * (size + 1) + 1 + x] = dark ? 0 : 255;
+    }
+  }
+  const zipped = new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new CompressionStream("deflate"))).arrayBuffer());
+  const signature = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  const ihdr = new Uint8Array(13);
+  const view = new DataView(ihdr.buffer);
+  view.setUint32(0, size);
+  view.setUint32(4, size);
+  ihdr[8] = 8;
+  const png = concatBytes([signature, pngChunk("IHDR", ihdr), pngChunk("IDAT", zipped), pngChunk("IEND", new Uint8Array())]);
+  let binary = "";
+  for (const byte of png) binary += String.fromCharCode(byte);
+  return `data:image/png;base64,${btoa(binary)}`;
+}
+
+function pngChunk(type, data) {
+  const body = new Uint8Array(4 + data.length);
+  body.set(new TextEncoder().encode(type), 0);
+  body.set(data, 4);
+  const out = new Uint8Array(12 + data.length);
+  new DataView(out.buffer).setUint32(0, data.length);
+  out.set(body, 4);
+  new DataView(out.buffer).setUint32(8 + data.length, crc32(body));
+  return out;
+}
+
+function crc32(bytes) {
+  let crc = ~0;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+  }
+  return ~crc >>> 0;
+}
+
+function concatBytes(parts) {
+  const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
 }
 
 function redirect(location, cookie) {

@@ -162,15 +162,13 @@ export function employeePage({ user, employee, credentials = [], history = [], f
     : "";
   const qrCredential = credentials.find((item) => item.method === "qr" && item.status === "active");
   const pass = issued?.method === "qr"
-    ? `<div class="pass" id="employee-pass"><p class="eyebrow">TRY CLOCK IN</p><p class="live">ACTIVE</p><h2>${escapeHtml(employee.first_name)} ${escapeHtml(employee.last_name)}</h2><p>EMPLOYEE ID ${escapeHtml(employee.employee_number)}</p><p>${escapeHtml(user.company_name)}</p><div class="qr">${issued.svg}</div><p class="muted">Personal employee QR. Linked to this profile. It contains a random token, not their ID number.</p></div>
-      <p class="row"><button class="button" type="button" id="save-pass">Save image</button><button class="button quiet" type="button" id="print-pass">Print ID</button></p>
+    ? `<div class="pass" id="employee-pass"><p class="eyebrow">TRY CLOCK IN</p><p class="live">ACTIVE</p><h2>${escapeHtml(employee.first_name)} ${escapeHtml(employee.last_name)}</h2><p>EMPLOYEE ID ${escapeHtml(employee.employee_number)}</p><p>${escapeHtml(user.company_name)}</p>      <div class="qr"><img alt="Employee QR pass" width="240" height="240" src="${issued.png}"></div><p class="muted">Personal employee QR. Linked to this profile. It contains a random token, not their ID number. Save it as a PNG.</p></div>
+      <p class="row"><button class="button" type="button" id="save-pass">Save PNG</button><button class="button quiet" type="button" id="print-pass">Print ID</button></p>
       <script>
         document.querySelector("#save-pass").onclick = () => {
-          const svg = document.querySelector("#employee-pass svg");
-          const blob = new Blob([svg.outerHTML], { type: "image/svg+xml" });
           const link = document.createElement("a");
-          link.href = URL.createObjectURL(blob);
-          link.download = "employee-pass.svg";
+          link.href = document.querySelector("#employee-pass img").src;
+          link.download = "employee-pass.png";
           link.click();
         };
         document.querySelector("#print-pass").onclick = () => {
@@ -389,7 +387,7 @@ function shell(title, body) {
     fieldset { border:1px solid var(--line); border-radius:16px; padding:16px; } .legal { color:var(--muted); font-size:12px; padding:8px 28px 28px; }
     .pass { border:1px solid var(--line); border-radius:28px; padding:22px; background:linear-gradient(180deg, rgba(159,29,45,.28), rgba(255,255,255,.03)); }
     .pass .live { letter-spacing:.18em; color:#3ddc84; font-size:12px; }
-    .pass .qr svg { background:#fff; border-radius:16px; padding:8px; }
+    .pass .qr img { background:#fff; border-radius:16px; padding:8px; }
     @media (max-width:900px) {
       .app, .stats, .split, .stations { grid-template-columns:1fr; }
       main { padding:20px 14px 48px; }

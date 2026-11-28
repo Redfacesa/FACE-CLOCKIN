@@ -114,8 +114,11 @@ export function kioskPage(code) {
     }
 
     function render(result) {
-      const verb = result.eventType === "CLOCK_IN" ? "Clock-in successful" : "Clock-out successful";
-      showFlow('<p class="muted">' + verb + '</p><div class="time">' + result.timeLabel + '</div><h1>Welcome back, ' + result.employee.firstName + '.</h1><p>Attendance recorded</p><p><button class="primary" id="done" type="button">Done</button></p>');
+      const leaving = result.eventType === "CLOCK_OUT";
+      const verb = leaving ? "Clock-out successful" : "Clock-in successful";
+      const greeting = leaving ? "See you soon, " : "Welcome back, ";
+      const name = String(result.employee.firstName || "").replace(/[<>]/g, "");
+      showFlow('<p class="muted">' + verb + '</p><div class="time">' + result.timeLabel + '</div><h1>' + greeting + name + '.</h1><p>Attendance recorded</p><p><button class="primary" id="done" type="button">Done</button></p>');
       document.querySelector("#done").onclick = showHome;
     }
 
@@ -226,16 +229,10 @@ export function kioskPage(code) {
       window.faceRequest = () => ({ stationId: state.station.id });
       window.onFaceAttemptStart = () => { resetRecognition(); home.classList.add("hidden"); facePanel.classList.remove("hidden"); };
       window.onFaceRejected = (message) => { showFaceFailure(message); };
-      window.onFaceIdentified = (payload, descriptor) => {
+      window.onFaceIdentified = async (payload, descriptor) => {
         if (!payload?.employee?.firstName) { showFaceFailure("Face not recognised."); return; }
-        const leaving = payload.suggestedAction === "CLOCK_OUT";
-        const name = String(payload.employee.firstName).replace(/[<>]/g, "");
-        showFlow('<p class="muted">Scanning face...</p><h1>Are you ' + (leaving ? "clocking out" : "clocking in") + ', ' + name + '?</h1><p><button class="primary" id="yes" type="button">Confirm</button> <button id="back" type="button">Not now</button></p><p class="error" id="err"></p>');
-        document.querySelector("#back").onclick = showHome;
-        document.querySelector("#yes").onclick = async () => {
-          try { render(await api("/api/clock", { method: "face", stationId: state.station.id, descriptor, action: payload.suggestedAction })); }
-          catch (error) { showFaceFailure(error.message); }
-        };
+        try { render(await api("/api/clock", { method: "face", stationId: state.station.id, descriptor, action: payload.suggestedAction })); }
+        catch (error) { showFaceFailure(error.message); }
       };
       document.querySelector("#face-back").onclick = showHome;
       document.querySelector("#nfc").onclick = startNfc;
