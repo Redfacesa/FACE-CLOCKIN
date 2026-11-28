@@ -284,16 +284,17 @@ export function adminGate({ sent = false, error = "" } = {}) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Admin</title><style>${publicStyle}</style></head><body>
     <header class="top"><a class="brand" href="/">TRY CLOCK IN</a></header>
     <main>
-      <h1>Admin</h1>
-      <p class="lead">Approvals are sent to info@redface.co.za. Open the email on this phone and the review screen opens.</p>
+      <h1>Platform owner</h1>
+      <p class="lead">info@redface.co.za is the admin. That account is already registered. Sign in with it to approve businesses and see anything that breaks.</p>
       ${sent ? `<p>The sign-in link is on its way to info@redface.co.za.</p>` : ""}
       ${error ? `<p class="error">${escapeHtml(error)}</p>` : ""}
-      <form method="post" action="/admin/login"><button class="btn" type="submit">Email the admin link</button></form>
+      <p><a class="btn" href="/login">Sign in</a></p>
+      <form method="post" action="/admin/login"><button class="btn quiet" type="submit">Email a sign-in link</button></form>
     </main>
   </body></html>`;
 }
 
-export function reviewPage({ applications, documentsByCompany, error = "" }) {
+export function reviewPage({ applications, documentsByCompany, incidents = [], error = "" }) {
   const cards = applications.filter((item) => item.status !== "active").map((item) => {
     const docs = documentsByCompany[item.id] ?? [];
     return `<article class="card"><h3>${escapeHtml(item.name)}</h3>
@@ -313,8 +314,12 @@ export function reviewPage({ applications, documentsByCompany, error = "" }) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Business review</title><style>${publicStyle}</style></head><body>
     <header class="top"><a class="brand" href="/admin">TRY CLOCK IN REVIEW</a></header>
     <main>
+      <p class="kicker">Platform owner · info@redface.co.za</p>
       <h1>Business applications</h1>
+      <p class="lead">Approvals and breaks stay here, so a company does not have to work out a platform failure.</p>
       ${error ? `<p class="error">${escapeHtml(error)}</p>` : ""}
+      <h2>When something breaks</h2>
+      <div class="card">${incidents.map((item) => `<p>${escapeHtml(item.created_at.slice(0, 16).replace("T", " "))} · ${escapeHtml(item.status)} · ${escapeHtml(item.path)} · ${escapeHtml(item.message)}</p>`).join("") || "<p>Nothing has broken.</p>"}</div>
       <div class="grid">${cards || "<p>No applications waiting.</p>"}</div>
       <h2>Open workspaces</h2>
       <ul>${live || "<li>None.</li>"}</ul>

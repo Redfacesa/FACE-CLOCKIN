@@ -63,6 +63,8 @@ import {
   pendingOwner,
   listApplications,
   listBusinessDocuments,
+  listIncidents,
+  recordIncident,
   listStations,
   listTeam,
   recordConsent,
@@ -92,6 +94,9 @@ export default {
     } catch (error) {
       const status = error.status || 500;
       const message = status === 500 ? "The platform could not complete that." : error.message;
+      if (status >= 500) {
+        try { await recordIncident(env.DB, { path: url.pathname, status, code: error.code, message: error.message || message }); } catch { /* the original failure still has to be shown */ }
+      }
       if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/v/") || url.pathname.endsWith("/face")) {
         return timed(json({ error: message, code: error.code || "error" }, status), started);
       }
@@ -239,7 +244,7 @@ async function platformReview(request, env, url) {
     });
     return redirect("/admin", adminCookie(cookieToken));
   }
-  const admin = await readAdminSession(request, env.SESSION_SECRET);
+  const admin = await platformOwner(request, env);
   if (!admin) return html(adminGate());
   const documentMatch = url.pathname.match(/^\/admin\/documents\/([^/]+)$/);
   if (documentMatch) {
@@ -267,15 +272,37 @@ async function platformReview(request, env, url) {
     }
   }
   const applications = await listApplications(env.DB);
-  return html(reviewPage({ applications, documentsByCompany: await documentsFor(env, applications) }));
+  return html(reviewPage({ applications, documentsByCompany: await documentsFor(env, applications), incidents: await listIncidents(env.DB) }));
+}
+
+async function platformOwner(request, env) {
+  const admin = await readAdminSession(request, env.SESSION_SECRET);
+  if (admin) return admin;
+  const session = await readSession(request, env.SESSION_SECRET);
+  if (!session?.uid) return null;
+  const user = await env.DB.prepare("SELECT email FROM company_users WHERE id = ? AND status = 'active'").bind(session.uid).first();
+  if (!isPlatformAdmin(env, user?.email)) return null;
+  return { ...session, email: user.email, role: "platform" };
 }
 
 async function login(request, env) {
   if (request.method !== "POST") return html(loginPage());
   const form = await request.formData();
   try {
-    const account = await authenticate(env.DB, form.get("email"), form.get("password"));
-    return redirect("/app", await sessionCookieFor(env, account));
+    const email = form.get("email");
+    const account = await authenticate(env.DB, email, form.get("password"));
+    const cookies = [await sessionCookieFor(env, account)];
+    if (isPlatformAdmin(env, email)) {
+      cookies.push(adminCookie(await signSession(env.SESSION_SECRET, {
+        uid: account.uid,
+        companyId: account.companyId,
+        role: "platform",
+        email: "info@redface.co.za",
+        exp: Date.now() + 12 * 60 * 60 * 1000,
+      })));
+      return redirect("/admin", cookies);
+    }
+    return redirect("/app", cookies);
   } catch (error) {
     if (!error.status) throw error;
     return html(loginPage({ error: error.message }), error.status);
@@ -682,8 +709,8 @@ function html(body, status = 200, cache = "no-store") {
 }
 
 function redirect(location, cookie) {
-  const headers = { location };
-  if (cookie) headers["set-cookie"] = cookie;
+  const headers = new Headers({ location });
+  for (const item of [].concat(cookie || [])) headers.append("set-cookie", item);
   return new Response(null, { status: 303, headers });
 }
 

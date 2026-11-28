@@ -746,6 +746,20 @@ export async function listApplications(db) {
   return rows.results ?? [];
 }
 
+export async function recordIncident(db, incident) {
+  const message = String(incident.message || "The platform could not complete that.").slice(0, 180);
+  await db.prepare(
+    "INSERT INTO platform_incidents (id, created_at, path, status, code, message) VALUES (?, ?, ?, ?, ?, ?)",
+  ).bind(crypto.randomUUID(), new Date().toISOString(), String(incident.path || "/").slice(0, 120), Number(incident.status) || 500, incident.code || null, message).run();
+}
+
+export async function listIncidents(db) {
+  const rows = await db.prepare(
+    "SELECT created_at, path, status, code, message FROM platform_incidents ORDER BY created_at DESC LIMIT 20",
+  ).all();
+  return rows.results ?? [];
+}
+
 export async function reviewCompany(db, companyId, action, actorEmail, note) {
   const company = await db.prepare("SELECT id, status FROM companies WHERE id = ?").bind(companyId).first();
   if (!company) throw httpError("That business was not found.", 404, "company_missing");
