@@ -9,42 +9,50 @@ export function kioskPage(code) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Clock in</title>
   <style>
-    :root { color-scheme: dark; --red:#9f1d2d; --muted:#b7b1ab; --line:rgba(255,255,255,.12); }
+    :root { color-scheme: dark; --red:#ff2a3a; --muted:#b7b1ab; --line:rgba(255,255,255,.12); }
     * { box-sizing: border-box; }
-    body { margin:0; min-height:100vh; color:#f6f4f2; font-family:"Avenir Next","Segoe UI",sans-serif; background:radial-gradient(900px 420px at 50% -10%, rgba(159,29,45,.38), transparent 58%), #0c0c0e; }
-    main { max-width:920px; margin:0 auto; padding:28px 20px 64px; }
-    .topbar { display:flex; justify-content:space-between; align-items:center; gap:12px; }
-    .mark { letter-spacing:.22em; font-size:13px; margin:0; }
-    .sub { letter-spacing:.28em; color:var(--red); font-size:12px; margin:4px 0 0; }
-    .ready { display:inline-flex; align-items:center; gap:8px; border:1px solid var(--line); border-radius:999px; padding:8px 12px; letter-spacing:.12em; font-size:12px; color:var(--muted); }
+    body { margin:0; min-height:100vh; color:#f6f4f2; font-family:"Avenir Next","Segoe UI",sans-serif; background:
+      radial-gradient(520px 180px at 0 0, rgba(255,42,58,.45), transparent 70%),
+      radial-gradient(520px 180px at 100% 0, rgba(255,42,58,.28), transparent 72%),
+      #070709; }
+    main { max-width:1180px; margin:0 auto; padding:22px 22px 48px; }
+    .term-bar { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:22px; }
+    .brand { display:flex; gap:12px; align-items:center; }
+    .r { width:42px; height:42px; display:grid; place-items:center; border-radius:12px; background:#ff2a3a; color:#fff; font-weight:700; box-shadow:0 0 18px rgba(255,42,58,.65); }
+    .brand strong { display:block; letter-spacing:.14em; font-size:14px; }
+    .brand em { color:#ff2a3a; font-style:normal; }
+    .brand small, .foot { color:var(--muted); letter-spacing:.04em; }
+    .term-meta { display:flex; align-items:center; gap:16px; }
+    .ready { display:inline-flex; align-items:center; gap:8px; border:1px solid rgba(61,220,132,.45); border-radius:999px; padding:8px 12px; color:#d7ffea; font-size:13px; }
     .pulse { width:8px; height:8px; border-radius:50%; background:#3ddc84; box-shadow:0 0 12px #3ddc84; }
-    h1 { font-size:clamp(36px, 6vw, 64px); line-height:.92; margin:12px 0 0; font-weight:560; letter-spacing:-.045em; }
-    .time { font-size:clamp(64px, 12vw, 112px); margin:8px 0; letter-spacing:-.06em; font-weight:560; }
+    .term-meta strong { display:block; font-size:18px; }
+    .term-meta span { color:var(--muted); font-size:12px; }
+    h1 { font-size:clamp(40px, 6vw, 72px); line-height:.92; margin:8px 0; font-weight:560; letter-spacing:-.045em; }
+    .time { font-size:clamp(56px, 8vw, 84px); margin:0; letter-spacing:-.05em; }
     .muted { color:var(--muted); }
     .actions { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-top:22px; }
-    button { font:inherit; color:inherit; background:rgba(255,255,255,.045); border:1px solid var(--line); border-radius:24px; padding:22px; text-align:left; backdrop-filter:blur(16px); min-height:132px; }
-    button span { color:var(--muted); display:block; margin-top:6px; }
-    button strong { display:block; font-size:26px; letter-spacing:-.03em; }
-    button.primary { background:var(--red); border-color:transparent; }
+    button { font:inherit; color:inherit; background:rgba(255,255,255,.04); border:1px solid var(--line); border-radius:18px; padding:18px; text-align:left; min-height:84px; box-shadow:inset 0 0 0 1px rgba(255,255,255,.03); }
+    button span { color:var(--muted); display:block; margin-top:4px; }
+    button strong { display:block; font-size:20px; }
+    button.primary { background:linear-gradient(180deg,#ff3144,#9f1224); border-color:transparent; box-shadow:0 0 24px rgba(255,42,58,.4); }
     button.primary span { color:rgba(255,255,255,.82); }
-    button.text { background:none; border:0; min-height:0; padding:14px 0; color:var(--muted); width:auto; }
-    .panel { margin-top:22px; } .hidden { display:none; }
-    #face-panel { margin-top:8px; }
-    #face-back { margin-top:16px; width:auto; min-height:0; }
-    video.qr-cam { width:100%; max-height:360px; border-radius:24px; background:#111; object-fit:cover; }
-    .foot { margin-top:36px; color:var(--muted); letter-spacing:.08em; font-size:13px; }
+    button.text, #face-back { background:transparent; border:1px solid rgba(255,42,58,.4); min-height:0; width:auto; border-radius:16px; padding:12px 16px; color:#fff; box-shadow:0 0 16px rgba(255,42,58,.2); }
+    .panel { margin-top:8px; } .hidden { display:none; }
+    video.qr-cam { width:100%; max-height:360px; border-radius:22px; background:#111; object-fit:cover; box-shadow:inset 0 0 0 2px #ff2a3a; }
+    .foot { margin-top:28px; font-size:13px; }
     input { width:100%; font:inherit; padding:14px; border-radius:14px; border:1px solid var(--line); background:rgba(0,0,0,.35); color:white; }
     .error { color:#f0c2c6; }
-    @media (max-width:700px) { main { padding:20px 14px 40px; } .actions { grid-template-columns:1fr; } button { min-height:96px; } }
+    @media (max-width:800px) { main { padding:16px 12px 36px; } .term-bar, .term-meta { align-items:flex-start; } .term-bar { flex-direction:column; } .actions { grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
   <main>
-    <div class="topbar"><div><p class="mark">TRY CLOCK IN</p><p class="sub">CLOCKING</p></div><p class="ready"><span class="pulse"></span> SYSTEM READY</p></div>
+    <header class="term-bar">
+      <div class="brand"><span class="r">R</span><div><strong>TRY <em>CLOCK IN</em></strong><small>Powered by RedFace</small></div></div>
+      <div class="term-meta"><p class="ready"><span class="pulse"></span> System ready</p><div><strong id="clock">--:--</strong><span id="date">—</span></div></div>
+    </header>
     <section id="home">
       <p class="muted" id="online">Station online</p>
-      <div class="time" id="clock">--:--</div>
-      <p id="date">—</p>
       <p>Look at the camera, tap a card, or scan your QR pass.</p>
       <div class="actions">
         <button class="primary" id="face" type="button"><strong>Face</strong><span>Look here</span></button>
@@ -60,8 +68,8 @@ export function kioskPage(code) {
       detail: "Look at the camera. Your face stays on screen while the landmarks follow your eyes, nose, mouth and jaw.",
       mode: "identify",
       postUrl: "/api/identify",
-    })}<p><button id="face-back" type="button">Back</button></p></section>
-    <p class="foot">Powered by Red Face Workforce · © Red Face (Pty) Ltd</p>
+    })}<p><button id="face-back" type="button">Cancel</button></p></section>
+    <p class="foot">RedFace · Secure, smart, seamless · © Red Face (Pty) Ltd</p>
   </main>
   <script>
     const stationCode = "${stationCode}";

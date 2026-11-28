@@ -5,17 +5,19 @@ function escapeHtml(value) {
 }
 
 const publicStyle = `
-  :root { color-scheme: dark; --ink:#f6f4f2; --muted:#b7b1ab; --line:rgba(255,255,255,.12); --red:#9f1d2d; --panel:rgba(255,255,255,.045); }
+  :root { color-scheme: dark; --ink:#f6f4f2; --muted:#b7b1ab; --line:rgba(255,255,255,.12); --red:#ff2a3a; --panel:rgba(255,255,255,.045); }
   * { box-sizing: border-box; }
-  body { margin:0; color:var(--ink); background:radial-gradient(900px 520px at 88% -8%, rgba(159,29,45,.42), transparent 52%), radial-gradient(640px 380px at -12% 18%, rgba(255,255,255,.05), transparent 46%), #0c0c0e; font-family:"Avenir Next","Segoe UI",sans-serif; line-height:1.5; }
+  body { margin:0; color:var(--ink); background:radial-gradient(720px 260px at 0 0, rgba(255,42,58,.4), transparent 58%), radial-gradient(680px 240px at 100% 0, rgba(255,42,58,.22), transparent 60%), #070709; font-family:"Avenir Next","Segoe UI",sans-serif; line-height:1.5; }
   a { color:inherit; }
-  header.top { position:sticky; top:0; z-index:4; display:flex; justify-content:space-between; gap:16px; align-items:center; padding:16px 5vw; background:rgba(12,12,14,.78); backdrop-filter:blur(18px); border-bottom:1px solid var(--line); }
-  .brand { letter-spacing:.2em; font-size:13px; text-decoration:none; display:grid; }
-  .brand small { letter-spacing:.22em; color:var(--red); font-size:10px; margin-top:3px; }
+  header.top { position:sticky; top:0; z-index:4; display:flex; justify-content:space-between; gap:16px; align-items:center; padding:16px 5vw; background:rgba(7,7,9,.82); backdrop-filter:blur(18px); border-bottom:1px solid rgba(255,42,58,.28); }
+  .brand { display:flex; gap:10px; align-items:center; letter-spacing:.16em; font-size:13px; text-decoration:none; }
+  .brand b { width:34px; height:34px; display:grid; place-items:center; border-radius:10px; background:var(--red); box-shadow:0 0 16px rgba(255,42,58,.6); }
+  .brand small { display:block; letter-spacing:.16em; color:var(--muted); font-size:10px; margin-top:3px; }
+  .brand em { color:var(--red); font-style:normal; }
   nav { display:flex; gap:18px; align-items:center; }
   nav a { text-decoration:none; color:var(--muted); }
-  .btn { background:var(--red); color:#fff; text-decoration:none; border:0; border-radius:999px; padding:12px 18px; display:inline-block; font:inherit; cursor:pointer; }
-  .btn.quiet { background:transparent; color:var(--ink); border:1px solid var(--line); }
+  .btn { background:linear-gradient(180deg,#ff3144,#9f1224); color:#fff; text-decoration:none; border:0; border-radius:16px; padding:12px 18px; display:inline-block; font:inherit; cursor:pointer; box-shadow:0 0 18px rgba(255,42,58,.35); }
+  .btn.quiet { background:transparent; color:var(--ink); border:1px solid var(--line); box-shadow:none; }
   .actions { display:flex; gap:12px; flex-wrap:wrap; margin:22px 0; }
   main { padding:0 5vw 80px; }
   .hero { display:grid; grid-template-columns:1.05fr .95fr; gap:48px; align-items:center; padding:64px 0 28px; }
@@ -71,7 +73,7 @@ const publicStyle = `
 
 export function landingPage() {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Try Clock In</title><style>${publicStyle}</style></head><body>
-    <header class="top"><a class="brand" href="/">TRY CLOCK IN<small>WORKFORCE TECHNOLOGY</small></a><nav><a href="#how">How it works</a><a href="#security">Security</a><a href="#pricing">Pricing</a><a class="btn quiet" href="/login">Business login</a><a class="btn" href="/signup">Register your business</a></nav></header>
+    <header class="top"><a class="brand" href="/"><b>R</b><span>TRY <em>CLOCK IN</em><small>POWERED BY REDFACE</small></span></a><nav><a href="#how">How it works</a><a href="#security">Security</a><a href="#pricing">Pricing</a><a class="btn quiet" href="/login">Business login</a><a class="btn" href="/signup">Register your business</a></nav></header>
     <main>
       <section class="hero">
         <div>
