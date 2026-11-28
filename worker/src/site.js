@@ -71,7 +71,7 @@ const publicStyle = `
 
 export function landingPage() {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Try Clock In</title><style>${publicStyle}</style></head><body>
-    <header class="top"><a class="brand" href="/">TRY CLOCK IN<small>WORKFORCE TECHNOLOGY</small></a><nav><a href="#how">How it works</a><a href="#security">Security</a><a href="#pricing">Pricing</a><a href="/login">Business login</a><a class="btn" href="/signup">Register your business</a></nav></header>
+    <header class="top"><a class="brand" href="/">TRY CLOCK IN<small>WORKFORCE TECHNOLOGY</small></a><nav><a href="#how">How it works</a><a href="#security">Security</a><a href="#pricing">Pricing</a><a class="btn quiet" href="/login">Business login</a><a class="btn" href="/signup">Register your business</a></nav></header>
     <main>
       <section class="hero">
         <div>
@@ -213,7 +213,7 @@ export function signupPage({ error = "", values = {} } = {}) {
   const industries = INDUSTRIES.map((industry) => `<option ${values.industry === industry ? "selected" : ""}>${escapeHtml(industry)}</option>`).join("");
   const sole = values.businessType === "sole";
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Register your business</title><style>${publicStyle}</style></head><body>
-    <header class="top"><a class="brand" href="/">TRY CLOCK IN</a><nav><a href="/login">Business login</a></nav></header>
+    <header class="top"><a class="brand" href="/">TRY CLOCK IN</a><nav><a class="btn quiet" href="/login">Business login</a></nav></header>
     <main>
       <p class="kicker">Business verification</p>
       <h1>Register your business</h1>
